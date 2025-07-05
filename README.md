@@ -1,2 +1,2 @@
 # GeoSync
-Real-time location tracker using Node.js and Ecpress.js 
+Real-time location tracker using Node.js and Express.js 
