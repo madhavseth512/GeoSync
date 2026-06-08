@@ -1,0 +1,13 @@
+/* Reset margins so the map can fill the entire viewport edge to edge. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* The map must fill the full viewport — Leaflet needs an explicit height. */
+#map {
+  width: 100%;
+  height: 100vh;
+}
