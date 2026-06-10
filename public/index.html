@@ -4,37 +4,92 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GeoSync</title>
-
-  <!-- Leaflet CSS (CDN) -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
     crossorigin=""
   />
-
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <!-- The Leaflet map renders into this container -->
-  <div id="map"></div>
 
-  <!-- Connected users count overlay -->
-  <div id="user-count">Connected: 0</div>
+  <!-- ── Screen 1: Auth (Login / Register) ────────────── -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h1>GeoSync</h1>
+      <p class="subtitle">Real-time location sharing</p>
 
-  <!-- Toast container for user-facing messages (no alert() per conventions) -->
-  <div id="toast"></div>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="login">Login</button>
+        <button class="tab-btn" data-tab="register">Register</button>
+      </div>
 
-  <!-- Leaflet JS (CDN) — must load before app.js -->
+      <!-- Login form -->
+      <form id="login-form" class="auth-form">
+        <input type="text" id="login-username" placeholder="Username" autocomplete="username" required />
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+        <div class="form-error" id="login-error"></div>
+        <button type="submit">Login</button>
+      </form>
+
+      <!-- Register form -->
+      <form id="register-form" class="auth-form hidden">
+        <input type="text" id="reg-username" placeholder="Username (3–50 chars, letters/numbers/_)" autocomplete="username" required />
+        <input type="password" id="reg-password" placeholder="Password (min 8 characters)" autocomplete="new-password" required />
+        <div class="form-error" id="register-error"></div>
+        <button type="submit">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Screen 2: Room (Create / Join) ───────────────── -->
+  <div id="room-screen" class="hidden">
+    <div class="room-card">
+      <h2>Welcome, <span id="welcome-username"></span></h2>
+      <p class="welcome">Create a new room or join an existing one.</p>
+
+      <div class="room-section">
+        <h3>Create a room</h3>
+        <button class="create-btn" id="create-room-btn">Generate Room Code</button>
+        <div class="room-code-display" id="room-code-display">
+          <p>Share this code with others</p>
+          <div class="code" id="generated-code"></div>
+          <button class="join-btn" style="margin-top:12px;width:100%" id="enter-created-room-btn">Enter Room</button>
+        </div>
+      </div>
+
+      <div class="room-section">
+        <h3>Join a room</h3>
+        <div class="join-row">
+          <input type="text" id="join-code-input" placeholder="Enter code" maxlength="6" />
+          <button class="join-btn" id="join-room-btn">Join</button>
+        </div>
+        <div class="room-error" id="room-error"></div>
+      </div>
+
+      <button class="logout-btn" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <!-- ── Screen 3: Map ─────────────────────────────────── -->
+  <div id="map-screen" class="hidden">
+    <div id="map"></div>
+    <div id="room-info">Room: <span id="active-room-code"></span></div>
+    <div id="user-count">Connected: 0</div>
+    <div id="sidebar">
+      <h4>In this room</h4>
+      <ul id="user-list"></ul>
+    </div>
+    <div id="toast"></div>
+  </div>
+
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
-
-  <!-- Socket.IO client — served automatically by the Socket.IO server -->
   <script src="/socket.io/socket.io.js"></script>
-
   <script src="/app.js"></script>
 </body>
 </html>

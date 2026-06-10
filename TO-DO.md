@@ -7,8 +7,8 @@
 
 ## Current Status
 
-**Active Phase:** Phase 3 (Phases 1–2 complete)
-**Last Updated:** 2026-06-09
+**Active Phase:** Phase 4 (Phases 1–3 complete)
+**Last Updated:** 2026-06-11
 
 ---
 
@@ -69,28 +69,28 @@ Two browser tabs open. Moving (or simulating movement by editing coordinates in 
 **Goal:** Users register and log in. Location sharing is scoped to private rooms only.
 
 ### Tasks
-- [ ] Install dependencies: `bcrypt`, `jsonwebtoken`, `express-validator`, `uuid`
-- [ ] Create `src/db/index.js` — PostgreSQL connection pool using `pg`
-- [ ] Create `src/db/queries.js` — named async functions for all DB operations (no raw SQL in routes)
-- [ ] Create `init.sql` — `users` table schema (id, username, password_hash, created_at)
-- [ ] Run `init.sql` against local PostgreSQL instance
-- [ ] Create `src/routes/auth.js` — `POST /api/register` with input validation, bcrypt hashing, DB insert
-- [ ] Create `src/routes/auth.js` — `POST /api/login` with bcrypt compare, JWT signing, token return
-- [ ] Create `src/middleware/auth.js` — `verifyToken` middleware that reads `Authorization: Bearer <token>` header
-- [ ] Mount auth routes in `server.js` — `app.use('/api', authRouter)`
-- [ ] Create Socket.IO auth middleware in `src/socket/middleware.js` — `io.use()` that verifies JWT, attaches decoded user to `socket.data.user`
-- [ ] Reject unauthenticated socket connections with error message
-- [ ] Add room join logic — `socket.on('join-room', { roomCode })` — `socket.join(roomCode)`, store `socket.data.roomCode`
-- [ ] Replace `io.emit()` with `io.to(roomCode).emit()` in all broadcast calls
-- [ ] Generate random 6-character room codes using `uuid` (first 6 chars)
-- [ ] Update `users` object to store `{ lat, lng, username, roomCode }` per socket
-- [ ] Build login UI in `index.html` — username/password form shown before map
-- [ ] Build room UI — "Create Room" button (generates code) and "Join Room" input
-- [ ] Display generated room code prominently so it can be shared
-- [ ] Store JWT in `localStorage` on login, read it on page load (skip login if token exists and valid)
-- [ ] Update marker popups to show real username instead of socket ID
-- [ ] Build sidebar showing connected users list with usernames for the current room
-- [ ] Emit `user-joined` and `user-left` events with username to room members
+- [x] Install dependencies: `bcrypt`, `jsonwebtoken`, `express-validator`, `uuid`
+- [x] Create `src/db/index.js` — PostgreSQL connection pool using `pg`
+- [x] Create `src/db/queries.js` — named async functions for all DB operations (no raw SQL in routes)
+- [x] Create `init.sql` — `users` table schema (id, username, password_hash, created_at)
+- [x] Run `init.sql` against local PostgreSQL instance
+- [x] Create `src/routes/auth.js` — `POST /api/register` with input validation, bcrypt hashing, DB insert
+- [x] Create `src/routes/auth.js` — `POST /api/login` with bcrypt compare, JWT signing, token return
+- [x] Create `src/middleware/auth.js` — `verifyToken` middleware that reads `Authorization: Bearer <token>` header
+- [x] Mount auth routes in `server.js` — `app.use('/api', authRouter)`
+- [x] Create Socket.IO auth middleware in `src/socket/middleware.js` — `io.use()` that verifies JWT, attaches decoded user to `socket.data.user`
+- [x] Reject unauthenticated socket connections with error message
+- [x] Add room join logic — `socket.on('join-room', { roomCode })` — `socket.join(roomCode)`, store `socket.data.roomCode`
+- [x] Replace `io.emit()` with `io.to(roomCode).emit()` in all broadcast calls
+- [x] Generate random 6-character room codes using `uuid` (first 6 chars)
+- [x] Update `users` object to store `{ lat, lng, username, roomCode }` per socket
+- [x] Build login UI in `index.html` — username/password form shown before map
+- [x] Build room UI — "Create Room" button (generates code) and "Join Room" input
+- [x] Display generated room code prominently so it can be shared
+- [x] Store JWT in `localStorage` on login, read it on page load (skip login if token exists and valid)
+- [x] Update marker popups to show real username instead of socket ID
+- [x] Build sidebar showing connected users list with usernames for the current room
+- [x] Emit `user-joined` and `user-left` events with username to room members
 
 ### Exit Condition
 User A registers, logs in, creates a room, shares the code with User B. User B logs in and joins with the code. Both see each other on the map. User C in a different room sees nobody. Refreshing the page re-uses the stored JWT and skips the login screen.

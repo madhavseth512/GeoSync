@@ -1,47 +1,36 @@
-// GeoSync entry point — wires the Express app and Socket.IO together.
-// Phase 2: real-time location sharing. The users object and socket handlers
-// live here for now; they move to src/socket/ in Phase 3 when rooms and auth
-// are introduced (per the phase plan in TO-DO.md).
+// GeoSync entry point — wires modules together. No business logic here.
+require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 
-const app = express();
+const authRouter = require('./src/routes/auth');
+const socketAuthMiddleware = require('./src/socket/middleware');
+const { registerSocketHandlers } = require('./src/socket/handlers');
 
-// Socket.IO needs a raw HTTP server to attach to, so we create one explicitly
-// and hand the Express app to it as the request listener.
+const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Serve everything in /public as static assets (index.html, style.css, app.js).
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory map of connected sockets: socket.id -> { lat, lng }.
-// Phase 2 is global (no rooms); Phase 3 adds username + roomCode and scopes
-// broadcasts with io.to(roomCode).emit().
+// REST routes
+app.use('/api', authRouter);
+
+// Socket.IO — reject unauthenticated connections before any handler runs.
+io.use(socketAuthMiddleware);
+
+// Shared in-memory map of connected sockets: socket.id -> { username, roomCode, lat, lng }.
+// Moves to Redis in Phase 5 for horizontal scaling.
 const users = {};
 
 io.on('connection', (socket) => {
-  console.log(`socket connected: ${socket.id}`);
-
-  // A client reports its current GPS position.
-  socket.on('send-location', (data) => {
-    const { lat, lng } = data;
-    users[socket.id] = { lat, lng };
-    // Global broadcast for Phase 2 — replaced by io.to(roomCode) in Phase 3.
-    io.emit('receive-location', { id: socket.id, lat, lng });
-  });
-
-  // Clean up shared state on disconnect so the users object never leaks.
-  socket.on('disconnect', () => {
-    console.log(`socket disconnected: ${socket.id}`);
-    delete users[socket.id];
-    io.emit('user-disconnected', socket.id);
-  });
+  registerSocketHandlers(io, socket, users);
 });
 
 server.listen(PORT, () => {
