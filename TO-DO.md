@@ -7,7 +7,7 @@
 
 ## Current Status
 
-**Active Phase:** Phase 2 (Phase 1 complete)
+**Active Phase:** Phase 3 (Phases 1–2 complete)
 **Last Updated:** 2026-06-09
 
 ---
@@ -40,24 +40,24 @@
 **Goal:** GPS coordinates flow from browser → server → all connected browsers in real time. Core feature complete.
 
 ### Tasks
-- [ ] Install dependencies: `socket.io`
-- [ ] Add Socket.IO server to `server.js` — wrap HTTP server, initialise `io`
-- [ ] Create `users` object in `server.js` — stores `socket.id → { lat, lng }`
-- [ ] Add `io.on('connection')` handler in `server.js`
-- [ ] Handle `send-location` event — store in `users`, broadcast `receive-location` to all clients with `{ id, lat, lng }`
-- [ ] Handle `disconnect` event — delete from `users`, broadcast `user-disconnected` with `socket.id`
-- [ ] Log connect and disconnect events to console with socket ID
-- [ ] Add Socket.IO client script tag to `index.html` (`/socket.io/socket.io.js`)
-- [ ] Write GPS reading in `app.js` — `navigator.geolocation.watchPosition()` with 5-second interval
-- [ ] Configure `watchPosition` options — `enableHighAccuracy: true`, `timeout: 5000`, `maximumAge: 0`
-- [ ] Handle geolocation permission denied error — show alert to user
-- [ ] Emit `send-location` with `{ lat, lng }` on each GPS update
-- [ ] Handle `receive-location` in `app.js` — create marker if new socket ID, update position if existing
-- [ ] Handle `user-disconnected` in `app.js` — remove marker from map, delete from local markers object
-- [ ] Auto-center map on own location on first GPS fix
-- [ ] Add username popup to each marker showing socket ID (temporary — replaced with real username in Phase 3)
-- [ ] Add connected users count display somewhere on the page
-- [ ] Test with two browser tabs simultaneously — both show each other's markers
+- [x] Install dependencies: `socket.io`
+- [x] Add Socket.IO server to `server.js` — wrap HTTP server, initialise `io`
+- [x] Create `users` object in `server.js` — stores `socket.id → { lat, lng }`
+- [x] Add `io.on('connection')` handler in `server.js`
+- [x] Handle `send-location` event — store in `users`, broadcast `receive-location` to all clients with `{ id, lat, lng }`
+- [x] Handle `disconnect` event — delete from `users`, broadcast `user-disconnected` with `socket.id`
+- [x] Log connect and disconnect events to console with socket ID
+- [x] Add Socket.IO client script tag to `index.html` (`/socket.io/socket.io.js`)
+- [x] Write GPS reading in `app.js` — `navigator.geolocation.watchPosition()` with 5-second interval
+- [x] Configure `watchPosition` options — `enableHighAccuracy: true`, `timeout: 5000`, `maximumAge: 0`
+- [x] Handle geolocation permission denied error — show alert to user (toast per conventions, not alert())
+- [x] Emit `send-location` with `{ lat, lng }` on each GPS update
+- [x] Handle `receive-location` in `app.js` — create marker if new socket ID, update position if existing
+- [x] Handle `user-disconnected` in `app.js` — remove marker from map, delete from local markers object
+- [x] Auto-center map on own location on first GPS fix
+- [x] Add username popup to each marker showing socket ID (temporary — replaced with real username in Phase 3)
+- [x] Add connected users count display somewhere on the page
+- [x] Test with two browser tabs simultaneously — both show each other's markers
 
 ### Exit Condition
 Two browser tabs open. Moving (or simulating movement by editing coordinates in DevTools) causes the marker on the other tab to update within 5 seconds. Closing one tab removes its marker from the other tab within seconds. No memory leaks — `users` object does not retain disconnected entries.

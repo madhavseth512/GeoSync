@@ -19,12 +19,21 @@
   <!-- The Leaflet map renders into this container -->
   <div id="map"></div>
 
+  <!-- Connected users count overlay -->
+  <div id="user-count">Connected: 0</div>
+
+  <!-- Toast container for user-facing messages (no alert() per conventions) -->
+  <div id="toast"></div>
+
   <!-- Leaflet JS (CDN) — must load before app.js -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
+
+  <!-- Socket.IO client — served automatically by the Socket.IO server -->
+  <script src="/socket.io/socket.io.js"></script>
 
   <script src="/app.js"></script>
 </body>
