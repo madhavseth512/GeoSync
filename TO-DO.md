@@ -7,7 +7,7 @@
 
 ## Current Status
 
-**Active Phase:** Phase 4 (Phases 1–3 complete)
+**Active Phase:** Phase 5 (Phases 1–4 complete)
 **Last Updated:** 2026-06-11
 
 ---
@@ -102,23 +102,23 @@ User A registers, logs in, creates a room, shares the code with User B. User B l
 **Goal:** Server is hardened against abuse and basic attacks before any public exposure.
 
 ### Tasks
-- [ ] Install dependencies: `express-rate-limit`, `helmet`
-- [ ] Add `helmet()` middleware to Express — secure HTTP headers
-- [ ] Configure CORS in Express — allow only specific origin, not wildcard
-- [ ] Create `src/middleware/rateLimiter.js` — auth limiter: max 20 requests per 15 minutes on `/api/login` and `/api/register`
-- [ ] Apply auth rate limiter to auth routes
-- [ ] Create general API limiter — max 100 requests per 15 minutes on all `/api/*` routes
-- [ ] Add input validation to `POST /api/register` — username: 3–50 chars, alphanumeric + underscore; password: min 8 chars
-- [ ] Add input validation to `POST /api/login` — both fields required, non-empty
-- [ ] Create Socket.IO throttle middleware in `src/socket/middleware.js`:
+- [x] Install dependencies: `express-rate-limit`, `helmet`
+- [x] Add `helmet()` middleware to Express — secure HTTP headers
+- [x] Configure CORS in Express — allow only specific origin, not wildcard
+- [x] Create `src/middleware/rate-limiter.js` — auth limiter: max 20 requests per 15 minutes on `/api/login` and `/api/register`
+- [x] Apply auth rate limiter to auth routes
+- [x] Create general API limiter — max 100 requests per 15 minutes on all `/api/*` routes
+- [x] Add input validation to `POST /api/register` — username: 3–50 chars, alphanumeric + underscore; password: min 8 chars
+- [x] Add input validation to `POST /api/login` — both fields required, non-empty
+- [x] Create Socket.IO throttle middleware in `src/socket/middleware.js`:
   - Track last emit timestamp per socket in a Map
   - If `send-location` arrives less than 4 seconds after last event, drop silently and increment violation counter
   - If violation counter exceeds 10, disconnect socket with reason `'throttle_exceeded'`
   - Reset violation counter on clean interval
-- [ ] Validate `lat` and `lng` values in `send-location` handler — must be valid numbers, lat in [-90, 90], lng in [-180, 180]
-- [ ] Add try/catch to all route handlers — uncaught errors return 500 with generic message, full error logged to console
-- [ ] Test rate limiting — rapid POST to `/api/login` should return 429 after 20 attempts
-- [ ] Test socket throttling — spamming `send-location` should disconnect socket after violations
+- [x] Validate `lat` and `lng` values in `send-location` handler — must be valid numbers, lat in [-90, 90], lng in [-180, 180]
+- [x] Add try/catch to all route handlers — uncaught errors return 500 with generic message, full error logged to console
+- [x] Test rate limiting — rapid POST to `/api/login` should return 429 after 20 attempts
+- [x] Test socket throttling — spamming `send-location` should disconnect socket after violations
 
 ### Exit Condition
 Sending 25 rapid POST requests to `/api/login` results in 429 responses after the 20th. Writing a script to emit `send-location` 20 times per second results in the socket being disconnected within 10 seconds. Server does not crash on any of these tests.

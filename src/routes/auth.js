@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const { createUser, getUserByUsername } = require('../db/queries');
+const { authLimiter } = require('../middleware/rate-limiter');
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ const passwordRules = body('password')
   .withMessage('Password must be at least 8 characters');
 
 // POST /api/register
-router.post('/register', [usernameRules, passwordRules], async (req, res) => {
+router.post('/register', authLimiter, [usernameRules, passwordRules], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -44,7 +45,7 @@ router.post('/register', [usernameRules, passwordRules], async (req, res) => {
 });
 
 // POST /api/login
-router.post('/login', [usernameRules, body('password').notEmpty()], async (req, res) => {
+router.post('/login', authLimiter, [usernameRules, body('password').notEmpty()], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
