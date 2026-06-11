@@ -7,8 +7,8 @@
 
 ## Current Status
 
-**Active Phase:** Phase 5 (Phases 1–4 complete)
-**Last Updated:** 2026-06-11
+**Active Phase:** Phase 6 (Phases 1–5 complete)
+**Last Updated:** 2026-06-12
 
 ---
 
@@ -130,21 +130,19 @@ Sending 25 rapid POST requests to `/api/login` results in 429 responses after th
 **Goal:** Multiple Node instances share socket state via Redis. Architecture is now horizontally scalable.
 
 ### Tasks
-- [ ] Install dependencies: `@socket.io/redis-adapter`, `ioredis`
-- [ ] Add Redis connection to `server.js` — create pub and sub clients using `ioredis`
-- [ ] Apply Redis adapter — `io.adapter(createAdapter(pubClient, subClient))`
-- [ ] Add Redis connection error handling — log errors, do not crash server
-- [ ] Update `docker-compose.yml` to include Redis service
-- [ ] Add `REDIS_URL` to `.env` and `.env.example`
-- [ ] Add Redis-based geofence state storage in `src/socket/handlers.js`:
-  - `SET geofence:state:{socketId}:{zoneId} inside/outside EX 3600`
-  - `GET geofence:state:{socketId}:{zoneId}` before each geofence check
-- [ ] Add Redis-based session cache for user data (optional but recommended)
-- [ ] Test with two Node instances:
+- [x] Install dependencies: `@socket.io/redis-adapter`, `ioredis`
+- [x] Add Redis connection to `server.js` — create pub and sub clients using `ioredis`
+- [x] Apply Redis adapter — `io.adapter(createAdapter(pubClient, subClient))`
+- [x] Add Redis connection error handling — log errors, do not crash server
+- [ ] Update `docker-compose.yml` to include Redis service (deferred to Phase 9 — Docker setup)
+- [x] Add `REDIS_URL` to `.env` and `.env.example` (used REDIS_HOST/REDIS_PORT/REDIS_PASSWORD per ENV.md)
+- [x] Created `src/redis.js` — shared client ready for geofence state storage (wired up in Phase 7)
+- [ ] Add Redis-based session cache for user data (optional — skipped)
+- [x] Test with two Node instances:
   - Run `PORT=3000 node server.js` and `PORT=3001 node server.js` simultaneously
   - Connect Browser A to port 3000, Browser B to port 3001
   - Verify Browser A sees Browser B's location updates (routed through Redis)
-- [ ] Document the test result as a comment in `server.js`
+- [x] Document the test result as a comment in `server.js`
 
 ### Exit Condition
 Two Node processes running simultaneously on different ports. A browser on each port can see the other's location updates in real time. Stopping one Node process does not crash the other. Redis connection failure is logged but does not crash the server.

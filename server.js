@@ -7,6 +7,8 @@ const path = require('path');
 const { Server } = require('socket.io');
 const helmet = require('helmet');
 const cors = require('cors');
+const Redis = require('ioredis');
+const { createAdapter } = require('@socket.io/redis-adapter');
 
 const authRouter = require('./src/routes/auth');
 const { apiLimiter } = require('./src/middleware/rate-limiter');
@@ -18,6 +20,29 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+
+// Redis Pub/Sub adapter — makes Socket.IO broadcasts work across multiple Node
+// instances. Pub/Sub needs two separate connections: a subscriber client cannot
+// also issue normal commands, so we duplicate the publisher for subscribing.
+const pubClient = new Redis({
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT,
+  password: process.env.REDIS_PASSWORD || undefined,
+});
+const subClient = pubClient.duplicate();
+
+// Redis failure must log, not crash — the app still serves a single instance.
+pubClient.on('error', (err) => console.error('Redis pub error:', err.message));
+subClient.on('error', (err) => console.error('Redis sub error:', err.message));
+
+// Every io.to(room).emit() is now published through Redis and fanned out to all
+// instances subscribed to that channel. Transparent — no handler changes needed.
+//
+// Verified (Phase 5): ran two instances (PORT=3000 and PORT=3001), connected a
+// client to each, both joined the same room. A location emitted on the 3000
+// client was received by the 3001 client via Redis. With Redis unreachable the
+// server still serves HTTP and logs errors without crashing.
+io.adapter(createAdapter(pubClient, subClient));
 
 // Secure HTTP headers — protects against XSS, clickjacking, MIME sniffing, etc.
 app.use(helmet());
@@ -38,7 +63,9 @@ app.use('/api', authRouter);
 io.use(socketAuthMiddleware);
 
 // Shared in-memory map: socket.id -> { username, roomCode, lat, lng }.
-// Moves to Redis in Phase 5 for horizontal scaling.
+// Kept in-memory per instance — cross-instance broadcasting is handled by the
+// Redis adapter above. Known limitation: the connected-users count is per
+// instance; a fully shared roster would store this in Redis too.
 const users = {};
 
 io.on('connection', (socket) => {
