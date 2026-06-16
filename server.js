@@ -11,6 +11,7 @@ const Redis = require('ioredis');
 const { createAdapter } = require('@socket.io/redis-adapter');
 
 const authRouter = require('./src/routes/auth');
+const historyRouter = require('./src/routes/history');
 const { apiLimiter } = require('./src/middleware/rate-limiter');
 const { socketAuthMiddleware } = require('./src/socket/middleware');
 const { registerSocketHandlers } = require('./src/socket/handlers');
@@ -45,7 +46,26 @@ subClient.on('error', (err) => console.error('Redis sub error:', err.message));
 io.adapter(createAdapter(pubClient, subClient));
 
 // Secure HTTP headers — protects against XSS, clickjacking, MIME sniffing, etc.
-app.use(helmet());
+// CSP is customised to allow the specific external origins GeoSync uses: the
+// Leaflet CDN (unpkg + cdnjs + leaflet.github.io for draw/heat plugins) and the
+// OpenStreetMap tile server. Everything else stays locked to 'self'.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", 'https://unpkg.com', 'https://cdnjs.cloudflare.com', 'https://leaflet.github.io'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://unpkg.com', 'https://cdnjs.cloudflare.com'],
+        // OSM tiles + Leaflet marker icons (served from the CDN) + inline data URIs.
+        imgSrc: ["'self'", 'data:', 'https://*.tile.openstreetmap.org', 'https://unpkg.com', 'https://cdnjs.cloudflare.com'],
+        // Socket.IO WebSocket connection to same origin.
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        objectSrc: ["'none'"],
+      },
+    },
+  })
+);
 
 // CORS — only allow requests from the configured client origin, never wildcard.
 app.use(cors({ origin: process.env.CLIENT_ORIGIN }));
@@ -58,6 +78,9 @@ app.use('/api', apiLimiter);
 
 // Auth routes (register/login have their own tighter authLimiter applied inside).
 app.use('/api', authRouter);
+
+// History routes — protected by verifyToken inside the router.
+app.use('/api', historyRouter);
 
 // Socket.IO — reject unauthenticated connections before any handler runs.
 io.use(socketAuthMiddleware);

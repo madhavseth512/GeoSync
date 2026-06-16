@@ -7,8 +7,8 @@
 
 ## Current Status
 
-**Active Phase:** Phase 6 (Phases 1–5 complete)
-**Last Updated:** 2026-06-12
+**Active Phase:** Phase 7 (Phases 1–6 complete)
+**Last Updated:** 2026-06-16
 
 ---
 
@@ -154,21 +154,21 @@ Two Node processes running simultaneously on different ports. A browser on each 
 **Goal:** All location data is persisted. Historical routes can be queried and visualised.
 
 ### Tasks
-- [ ] Install dependencies: `pg` (if not already installed)
-- [ ] Update `init.sql` — add `location_pings` table with PostGIS geometry column
-- [ ] Add spatial index on `location_pings.geom` (GIST)
-- [ ] Add time-based index on `(user_id, timestamp DESC)`
-- [ ] Add non-blocking location ping insert to `send-location` handler — `INSERT INTO location_pings` fires async without awaiting in the socket handler
-- [ ] Create `src/db/queries.js` function: `insertLocationPing(userId, lat, lng)`
-- [ ] Create `src/db/queries.js` function: `getRouteHistory(userId, from, to)` — returns GeoJSON LineString
-- [ ] Create `src/routes/history.js` — `GET /api/history/:userId?from=&to=`
-- [ ] Validate `from` and `to` as valid ISO timestamps, default to last 30 minutes if not provided
-- [ ] Mount history routes in `server.js`
-- [ ] Add route replay to client — clicking username in sidebar sends request to `/api/history`
-- [ ] Render returned GeoJSON LineString as a polyline on the map with `L.geoJSON()`
-- [ ] Style the polyline — dashed, colour matching the user's marker colour
-- [ ] Add "Clear Route" button to remove the polyline from the map
-- [ ] Test: move around (or simulate), request history, verify polyline renders correctly
+- [x] Install dependencies: `pg` (if not already installed)
+- [x] Update `init.sql` — add `location_pings` table with PostGIS geometry column
+- [x] Add spatial index on `location_pings.geom` (GIST)
+- [x] Add time-based index on `(user_id, timestamp DESC)`
+- [x] Add non-blocking location ping insert to `send-location` handler — `INSERT INTO location_pings` fires async without awaiting in the socket handler
+- [x] Create `src/db/queries.js` function: `insertLocationPing(userId, lat, lng)`
+- [x] Create `src/db/queries.js` function: `getRouteHistory(userId, from, to)` — returns GeoJSON LineString
+- [x] Create `src/routes/history.js` — `GET /api/history/:userId?from=&to=`
+- [x] Validate `from` and `to` as valid ISO timestamps, default to last 30 minutes if not provided
+- [x] Mount history routes in `server.js`
+- [x] Add route replay to client — clicking username in sidebar sends request to `/api/history`
+- [x] Render returned GeoJSON LineString as a polyline on the map with `L.geoJSON()`
+- [x] Style the polyline — dashed, colour matching the user's marker colour
+- [x] Add "Clear Route" button to remove the polyline from the map
+- [x] Test: move around (or simulate), request history, verify polyline renders correctly (verified via API + DB; browser polyline pending your visual check)
 
 ### Exit Condition
 After 5 minutes of simulated movement, clicking a username in the sidebar renders a visible polyline on the map showing their path. The `/api/history` endpoint returns valid GeoJSON. The `location_pings` table is growing with new rows on every GPS update.

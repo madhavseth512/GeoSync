@@ -1,9 +1,10 @@
 const { checkThrottle, clearThrottle } = require('./middleware');
+const { insertLocationPing } = require('../db/queries');
 
 // All Socket.IO event handlers — io.to(roomCode).emit() everywhere, never io.emit().
 
 function registerSocketHandlers(io, socket, users) {
-  const { username } = socket.data.user;
+  const { userId, username } = socket.data.user;
 
   console.log(`socket connected: ${socket.id} (${username})`);
 
@@ -31,7 +32,14 @@ function registerSocketHandlers(io, socket, users) {
 
     users[socket.id] = { ...users[socket.id], lat, lng };
 
-    io.to(roomCode).emit('receive-location', { id: socket.id, lat, lng, username });
+    // Persist the ping fire-and-forget — must NOT block the broadcast. We catch
+    // and log errors so a DB hiccup never disrupts real-time location flow.
+    insertLocationPing(userId, lat, lng).catch((err) => {
+      console.error('insertLocationPing failed:', { userId, lat, lng, err: err.message });
+    });
+
+    // userId is included so clients can request this user's route history.
+    io.to(roomCode).emit('receive-location', { id: socket.id, userId, lat, lng, username });
   });
 
   socket.on('disconnect', () => {

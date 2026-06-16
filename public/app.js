@@ -27,14 +27,19 @@ const activeRoomCodeEl = document.getElementById('active-room-code');
 const userCountEl      = document.getElementById('user-count');
 const userListEl       = document.getElementById('user-list');
 const toastEl          = document.getElementById('toast');
+const clearRouteBtn    = document.getElementById('clear-route-btn');
+
+clearRouteBtn.addEventListener('click', clearRoute);
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let socket       = null;
-let map          = null;
-const markers    = {};  // socket.id -> Leaflet marker
-const roomUsers  = {};  // socket.id -> username
+let socket        = null;
+let map           = null;
+const markers     = {};  // socket.id -> Leaflet marker
+const roomUsers   = {};  // socket.id -> username
+const socketUserIds = {}; // socket.id -> database userId (for history lookups)
 let hasCenteredOnSelf = false;
 let currentRoomCode   = null;
+let routeLayer        = null; // currently displayed route polyline (only one at a time)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -61,12 +66,17 @@ function addUserToSidebar(id, username) {
   const li = document.createElement('li');
   li.id = `user-${id}`;
   li.textContent = username;
+  li.title = 'Click to show route history';
+  li.classList.add('clickable');
+  // Click a user to replay their recent route as a polyline.
+  li.addEventListener('click', () => showRouteHistory(id, username));
   userListEl.appendChild(li);
   updateUserCount();
 }
 
 function removeUserFromSidebar(id) {
   delete roomUsers[id];
+  delete socketUserIds[id];
   const li = document.getElementById(`user-${id}`);
   if (li) li.remove();
   updateUserCount();
@@ -228,7 +238,10 @@ function enterRoom(roomCode) {
     removeUserFromSidebar(id);
   });
 
-  socket.on('receive-location', ({ id, lat, lng, username }) => {
+  socket.on('receive-location', ({ id, userId, lat, lng, username }) => {
+    // Remember the DB userId for this socket so we can request route history.
+    socketUserIds[id] = userId;
+
     if (markers[id]) {
       markers[id].setLatLng([lat, lng]);
     } else {
@@ -242,6 +255,46 @@ function enterRoom(roomCode) {
       hasCenteredOnSelf = true;
     }
   });
+}
+
+// ── Route history ─────────────────────────────────────────────────────────────
+// Fetch a user's recent path and draw it as a dashed polyline. Only one route
+// is shown at a time — requesting a new one replaces the previous.
+async function showRouteHistory(socketId, username) {
+  const userId = socketUserIds[socketId];
+  if (!userId) { showToast('No history available yet for this user.'); return; }
+
+  const token = localStorage.getItem('geosync_token');
+  try {
+    const res = await fetch(`/api/history/${userId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) { showToast('Could not load route history.'); return; }
+
+    const feature = await res.json();
+    if (!feature.geometry) {
+      showToast(`No route yet for ${username} — need at least two pings.`);
+      return;
+    }
+
+    clearRoute();
+    routeLayer = L.geoJSON(feature, {
+      style: { color: '#4f46e5', weight: 4, opacity: 0.8, dashArray: '8 6' },
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    clearRouteBtn.style.display = 'block';
+    showToast(`Showing ${username}'s route`);
+  } catch {
+    showToast('Network error loading route history.');
+  }
+}
+
+function clearRoute() {
+  if (routeLayer) {
+    map.removeLayer(routeLayer);
+    routeLayer = null;
+  }
+  clearRouteBtn.style.display = 'none';
 }
 
 function startGPS() {
