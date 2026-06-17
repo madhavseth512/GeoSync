@@ -10,6 +10,12 @@
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
     crossorigin=""
   />
+  <!-- Leaflet.draw — polygon/rectangle drawing toolbar -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"
+    crossorigin=""
+  />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -77,17 +83,79 @@
     <div id="map"></div>
     <div id="room-info">Room: <span id="active-room-code"></span></div>
     <div id="user-count">Connected: 0</div>
+
+    <!-- View mode toggle — Live (markers + drawing) vs Heatmap (density layer) -->
+    <div id="view-mode-toggle">
+      <button class="mode-btn active" id="view-live">Live</button>
+      <button class="mode-btn" id="view-heatmap">Heatmap</button>
+    </div>
+
+    <!-- Draw mode toggle — shown only in Live mode -->
+    <div id="draw-mode-toggle">
+      <button class="mode-btn active" id="mode-map-draw">Draw on Map</button>
+      <button class="mode-btn" id="mode-walk-boundary">Walk Boundary</button>
+    </div>
+
+    <!-- Heatmap controls — shown only in Heatmap mode -->
+    <div id="heatmap-controls" class="hidden">
+      <label for="heatmap-range">Range:</label>
+      <select id="heatmap-range">
+        <option value="1">Last 1 hour</option>
+        <option value="6" selected>Last 6 hours</option>
+        <option value="24">Last 24 hours</option>
+      </select>
+      <span id="heatmap-spinner" class="hidden"><span class="spinner"></span> Loading…</span>
+    </div>
+
+    <!-- Walk Boundary controls — shown only in walk mode -->
+    <div id="walk-controls" class="hidden">
+      <button id="walk-start-btn">Start Recording</button>
+      <span id="walk-counter" class="hidden"><span class="rec-dot"></span> Recording — <span id="walk-point-count">0</span> points</span>
+      <button id="walk-undo-btn" class="hidden">Undo</button>
+      <button id="walk-save-btn" class="hidden" disabled>Close &amp; Save</button>
+      <button id="walk-cancel-btn" class="hidden">Cancel</button>
+    </div>
+
     <div id="sidebar">
       <h4>In this room</h4>
       <ul id="user-list"></ul>
       <button id="clear-route-btn" style="display:none">Clear Route</button>
+
+      <!-- Alert history panel — last 10 geofence enter/exit events -->
+      <div id="alert-panel" class="hidden">
+        <h4>Alerts</h4>
+        <ul id="alert-list"></ul>
+      </div>
     </div>
+
     <div id="toast"></div>
+
+    <!-- Zone name modal — appears after drawing a polygon (either mode) -->
+    <div id="zone-modal" class="hidden">
+      <div id="zone-modal-box">
+        <p>Name this zone</p>
+        <input type="text" id="zone-name-input" placeholder="e.g. Campus, Danger Zone" maxlength="100" />
+        <div id="zone-modal-actions">
+          <button id="zone-cancel-btn">Cancel</button>
+          <button id="zone-save-btn">Save Zone</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <!-- Leaflet.draw — must load after Leaflet -->
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"
+    crossorigin=""
+  ></script>
+  <!-- Leaflet.heat — density heatmap layer, must load after Leaflet -->
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"
     crossorigin=""
   ></script>
   <script src="/socket.io/socket.io.js"></script>

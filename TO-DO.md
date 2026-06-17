@@ -7,8 +7,8 @@
 
 ## Current Status
 
-**Active Phase:** Phase 7 (Phases 1–6 complete)
-**Last Updated:** 2026-06-16
+**Active Phase:** Phase 9 (Phases 1–8 complete)
+**Last Updated:** 2026-06-17
 
 ---
 
@@ -180,29 +180,35 @@ After 5 minutes of simulated movement, clicking a username in the sidebar render
 **Goal:** Users draw polygon zones. Real-time enter/exit alerts fire for all room members.
 
 ### Tasks
-- [ ] Install client dependency: Leaflet.draw plugin (via CDN)
-- [ ] Install server dependency: (none — PostGIS handles spatial queries)
-- [ ] Update `init.sql` — add `geofences` table with PostGIS polygon geometry column
-- [ ] Add spatial index on `geofences.geom`
-- [ ] Create `src/db/queries.js` function: `saveGeofence(roomId, name, polygonGeoJSON, userId)`
-- [ ] Create `src/db/queries.js` function: `getGeofencesForRoom(roomId)` — returns array of zones
-- [ ] Create `src/routes/geofences.js` — `POST /api/geofences` (save new zone), `GET /api/geofences/:roomId` (load all zones)
-- [ ] Mount geofence routes in `server.js`
-- [ ] Add Leaflet.draw toolbar to client map — allow polygon and rectangle drawing
-- [ ] On draw complete, prompt user for zone name, POST to `/api/geofences`
-- [ ] On room join, load existing geofences from `GET /api/geofences/:roomId` and render on map
-- [ ] Add geofence check to `send-location` socket handler:
-  - Query active geofences for room from DB (cache result in Redis for 60 seconds)
-  - Run `ST_Within(userPoint, zoneGeom)` for each zone via PostGIS
-  - Compare to Redis state — detect enter/exit transitions
-  - Update Redis state
-  - Emit `geofence-alert` event on transition
-- [ ] Handle `geofence-alert` on client — show toast notification with username, zone name, enter/exit
-- [ ] Add alert history panel to sidebar — last 10 alerts with timestamps
-- [ ] Add ability to delete geofences (draw toolbar delete tool + `DELETE /api/geofences/:id`)
+- [x] Install client dependency: Leaflet.draw plugin (via CDN)
+- [x] Install server dependency: (none — PostGIS handles spatial queries)
+- [x] Update `init.sql` — add `geofences` table with PostGIS polygon geometry column
+- [x] Add spatial index on `geofences.geom` (GIST) + `room_code` btree index
+- [x] Create `src/db/queries.js` function: `saveGeofence(roomCode, name, polygonGeoJSON, userId)`
+- [x] Create `src/db/queries.js` function: `getGeofencesForRoom(roomCode)` — returns array of zones
+- [x] Create `src/db/queries.js` function: `deleteGeofence(id, roomCode)` (roomCode guard prevents cross-room deletion)
+- [x] Create `src/db/queries.js` function: `checkGeofences(roomCode, lat, lng)` — single ST_Within query for all zones
+- [x] Create `src/routes/geofences.js` — `POST /api/geofences`, `GET /api/geofences/:roomCode`, `DELETE /api/geofences/:id`
+- [x] Mount geofence routes in `server.js`
+- [x] Add Leaflet.draw toolbar to client map — allow polygon and rectangle drawing
+- [x] On draw complete, prompt user for zone name (inline modal, not window.prompt), POST to `/api/geofences`
+- [x] On room join, load existing geofences from `GET /api/geofences/:roomCode` and render on map
+- [x] Add geofence check to `send-location` socket handler:
+  - Run `ST_Within(userPoint, zoneGeom)` for all zones in one PostGIS query
+  - Compare to Redis state (`gf:room:user:zone`) — detect enter/exit transitions
+  - Update Redis state (2h TTL)
+  - Emit `geofence-alert` event on transition (fire-and-forget, never blocks broadcast)
+  - NOTE: skipped 60s Redis cache of geofence list — direct PostGIS query is correct + fast at this scale; caching would force point-in-polygon into JS, losing PostGIS accuracy
+- [x] Handle `geofence-alert` on client — show toast notification with username, zone name, enter/exit
+- [x] Add alert history panel to sidebar — last 10 alerts with timestamps
+- [x] Add ability to delete geofences (draw toolbar delete tool + `DELETE /api/geofences/:id`)
+- [x] ADDED: Walk Boundary mode — GPS-traced polygon with haversine 5m drift filter, live polyline, point counter, Undo, min-3-points (toggle: Draw on Map / Walk Boundary)
+- [x] ADDED: Boundary labels pinned to each polygon's northernmost vertex (clear for nested zones)
+- [x] ADDED: Cross-client deletion sync — `delete-geofence` socket event → `geofence-removed` broadcast removes polygon, label, and alerts on all room members live
+- [x] ADDED: Alerts tagged with geofenceId so deleting a zone clears its alert history
 
 ### Exit Condition
-Draw a polygon on the map. Simulate a coordinate path that enters, moves through, and exits the polygon. Observe toast notifications for enter and exit events on all connected clients in the room. Alerts appear in the sidebar history panel with correct timestamps.
+Draw a polygon on the map. Simulate a coordinate path that enters, moves through, and exits the polygon. Observe toast notifications for enter and exit events on all connected clients in the room. Alerts appear in the sidebar history panel with correct timestamps. ✅ VERIFIED (visual confirmation: nested zones, enter alerts firing, cross-client delete sync working).
 
 ---
 
@@ -211,22 +217,24 @@ Draw a polygon on the map. Simulate a coordinate path that enters, moves through
 **Goal:** Historical location data visualised as a density heatmap with time range selection.
 
 ### Tasks
-- [ ] Add Leaflet.heat plugin to `index.html` via CDN
-- [ ] Create `src/db/queries.js` function: `getHeatmapData(roomId, from, to)` — rounded coordinates with frequency count
-- [ ] Create `src/routes/heatmap.js` — `GET /api/heatmap/:roomId?from=&to=`
-- [ ] Validate and default time range parameters (default: last 6 hours)
-- [ ] Mount heatmap routes in `server.js`
-- [ ] Add mode toggle button to UI — "Live" and "Heatmap" modes
-- [ ] In Live mode: show real-time markers, hide heatmap layer
-- [ ] In Heatmap mode: hide live markers, show heatmap layer using `L.heatLayer()`
-- [ ] Add time range selector — dropdown with options: Last 1 hour, Last 6 hours, Last 24 hours
-- [ ] Fetch heatmap data on mode switch and on time range change
-- [ ] Auto-refresh heatmap data every 60 seconds when in heatmap mode
-- [ ] Style heatmap — `radius: 25`, `blur: 15`, `maxZoom: 17`, gradient from blue (sparse) to red (dense)
-- [ ] Show loading indicator while heatmap data is fetching
+- [x] Add Leaflet.heat plugin to `index.html` via CDN
+- [x] Create `src/db/queries.js` function: `getHeatmapData(roomCode, from, to)` — rounded coordinates with frequency count
+- [x] Create `src/routes/heatmap.js` — `GET /api/heatmap/:roomCode?from=&to=`
+- [x] Validate and default time range parameters (default: last 6 hours)
+- [x] Mount heatmap routes in `server.js`
+- [x] Add mode toggle button to UI — "Live" and "Heatmap" modes
+- [x] In Live mode: show real-time markers, hide heatmap layer
+- [x] In Heatmap mode: hide live markers, show heatmap layer using `L.heatLayer()`
+- [x] Add time range selector — dropdown with options: Last 1 hour, Last 6 hours, Last 24 hours
+- [x] Fetch heatmap data on mode switch and on time range change
+- [x] Auto-refresh heatmap data every 60 seconds when in heatmap mode
+- [x] Style heatmap — `radius: 25`, `blur: 15`, `maxZoom: 17`, gradient from blue (sparse) to red (dense)
+- [x] Show loading indicator while heatmap data is fetching
+- [x] ADDED: `room_code` column on `location_pings` + `(room_code, timestamp DESC)` index — heatmap is room-scoped (Option B)
+- [x] ADDED: fixed Redis pub/sub crash (`maxRetriesPerRequest: null`) — Redis outage no longer crashes server (Phase 5 requirement)
 
 ### Exit Condition
-After accumulating at least 10 minutes of location history in a room, switching to Heatmap mode shows a visible gradient layer where users have been. Changing the time range updates the heatmap. Live mode and Heatmap mode toggle cleanly without map errors.
+After accumulating at least 10 minutes of location history in a room, switching to Heatmap mode shows a visible gradient layer where users have been. Changing the time range updates the heatmap. Live mode and Heatmap mode toggle cleanly without map errors. ✅ API VERIFIED (aggregation: 4 pings → 2 weighted cells; validation 400; auth 401). Browser visual check pending user.
 
 ---
 
@@ -264,3 +272,12 @@ After accumulating at least 10 minutes of location history in a room, switching 
 ## Upgrade Reference
 
 For detailed implementation notes on each upgrade (what it is, what to add, interview talking points), refer to `GeoSync_Upgrade_Reference.md`.
+
+---
+
+## Post-Web: Native Android Migration (future)
+
+After Phase 9, the planned next step is a native **Android** app (React Native)
+to enable true background location tracking — the one thing the web app can't do.
+Full plan, decisions, free distribution path, and free deployment stack are in
+[MOBILE-MIGRATION.md](MOBILE-MIGRATION.md). Not part of Phases 1–9.

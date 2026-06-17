@@ -292,5 +292,302 @@ html, body {
 
 #toast.visible { opacity: 1; }
 
+/* ─── View mode toggle (Live / Heatmap) — top row ─────── */
+#view-mode-toggle {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  background: rgba(255,255,255,0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  overflow: hidden;
+}
+
+/* ─── Draw mode toggle — second row, Live mode only ───── */
+#draw-mode-toggle {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  background: rgba(255,255,255,0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  overflow: hidden;
+}
+
+/* ─── Heatmap controls — second row, Heatmap mode only ── */
+#heatmap-controls {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #374151;
+  white-space: nowrap;
+}
+
+#heatmap-controls label { font-weight: 600; }
+
+#heatmap-range {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+#heatmap-spinner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #d1d5db;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.mode-btn {
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.mode-btn.active {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.mode-btn:not(.active):hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* ─── Walk Boundary controls — third row ──────────────── */
+#walk-controls {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+#walk-controls button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#walk-start-btn  { background: #4f46e5; color: #fff; }
+#walk-start-btn:hover { background: #4338ca; }
+
+#walk-undo-btn   { background: #f3f4f6; color: #374151; }
+#walk-undo-btn:hover { background: #e5e7eb; }
+
+#walk-save-btn   { background: #10b981; color: #fff; }
+#walk-save-btn:hover:not(:disabled) { background: #059669; }
+#walk-save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+#walk-cancel-btn { background: #fee2e2; color: #dc2626; }
+#walk-cancel-btn:hover { background: #fecaca; }
+
+/* Pulsing red dot shown while recording */
+#walk-counter {
+  font-size: 13px;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: pulse-rec 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ─── Alert history panel ─────────────────────────────── */
+#alert-panel {
+  margin-top: 10px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+#alert-panel h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#alert-list li {
+  font-size: 12px;
+  padding: 3px 0;
+  color: #374151;
+  line-height: 1.4;
+}
+
+#alert-list li .alert-dot {
+  font-size: 9px;
+  margin-right: 4px;
+}
+
+#alert-list li .alert-dot.enter { color: #10b981; }
+#alert-list li .alert-dot.exit  { color: #ef4444; }
+
+#alert-list li .alert-time {
+  color: #9ca3af;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* ─── Zone name modal ─────────────────────────────────── */
+#zone-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#zone-modal-box {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+#zone-modal-box p {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+#zone-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#zone-name-input:focus { border-color: #4f46e5; }
+
+#zone-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+#zone-cancel-btn {
+  padding: 8px 16px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#zone-cancel-btn:hover { background: #e5e7eb; }
+
+#zone-save-btn {
+  padding: 8px 16px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#zone-save-btn:hover { background: #4338ca; }
+
+/* ─── Zone boundary label (divIcon) ──────────────────── */
+/* Overrides Leaflet's default .leaflet-div-icon white box. */
+.zone-label {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.zone-label span {
+  display: inline-block;
+  padding: 2px 7px;
+  background: rgba(245, 158, 11, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.3px;
+}
+
 /* Utility */
 .hidden { display: none !important; }

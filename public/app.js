@@ -1,7 +1,8 @@
-// GeoSync client — Phase 3: JWT auth, private rooms, real-time location.
+// GeoSync client — Phase 7: geofencing (Draw on Map + Walk Boundary).
 
 const INDIA_CENTER = [20.5937, 78.9629];
 const INITIAL_ZOOM = 5;
+const WALK_MIN_DISTANCE_M = 5; // minimum metres between waypoints to filter GPS drift
 
 // ── DOM references ────────────────────────────────────────────────────────────
 const authScreen    = document.getElementById('auth-screen');
@@ -29,6 +30,37 @@ const userListEl       = document.getElementById('user-list');
 const toastEl          = document.getElementById('toast');
 const clearRouteBtn    = document.getElementById('clear-route-btn');
 
+// Draw mode toggle
+const modeMapDrawBtn      = document.getElementById('mode-map-draw');
+const modeWalkBoundaryBtn = document.getElementById('mode-walk-boundary');
+const drawModeToggle      = document.getElementById('draw-mode-toggle');
+
+// Walk Boundary controls
+const walkControls   = document.getElementById('walk-controls');
+const walkStartBtn   = document.getElementById('walk-start-btn');
+const walkCounter    = document.getElementById('walk-counter');
+const walkPointCount = document.getElementById('walk-point-count');
+const walkUndoBtn    = document.getElementById('walk-undo-btn');
+const walkSaveBtn    = document.getElementById('walk-save-btn');
+const walkCancelBtn  = document.getElementById('walk-cancel-btn');
+
+// Alert panel
+const alertPanel = document.getElementById('alert-panel');
+const alertList  = document.getElementById('alert-list');
+
+// Zone name modal
+const zoneModal       = document.getElementById('zone-modal');
+const zoneNameInput   = document.getElementById('zone-name-input');
+const zoneSaveBtn     = document.getElementById('zone-save-btn');
+const zoneCancelBtn   = document.getElementById('zone-cancel-btn');
+
+// View mode toggle + heatmap controls
+const viewLiveBtn      = document.getElementById('view-live');
+const viewHeatmapBtn   = document.getElementById('view-heatmap');
+const heatmapControls  = document.getElementById('heatmap-controls');
+const heatmapRangeSel  = document.getElementById('heatmap-range');
+const heatmapSpinner   = document.getElementById('heatmap-spinner');
+
 clearRouteBtn.addEventListener('click', clearRoute);
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -39,7 +71,26 @@ const roomUsers   = {};  // socket.id -> username
 const socketUserIds = {}; // socket.id -> database userId (for history lookups)
 let hasCenteredOnSelf = false;
 let currentRoomCode   = null;
-let routeLayer        = null; // currently displayed route polyline (only one at a time)
+let routeLayer        = null;
+
+// Geofence state
+let drawnItems        = null;  // L.FeatureGroup holding all drawn zone layers
+let drawControl       = null;  // Leaflet.draw toolbar instance
+let pendingLayer      = null;  // layer waiting for name input (map-draw mode)
+const geofenceLayers  = {};    // geofenceId -> Leaflet layer (for delete)
+const alerts          = [];    // last 10 { username, zoneName, type, timestamp }
+
+// Heatmap state
+let viewMode          = 'live'; // 'live' | 'heatmap'
+let heatLayer         = null;   // L.heatLayer instance
+let heatmapTimer      = null;   // auto-refresh interval id
+
+// Walk Boundary state
+let walkWaypoints     = [];    // [{ lat, lng }] collected so far
+let walkPolyline      = null;  // live L.polyline shown during recording
+let walkPreview       = null;  // closed polygon preview before saving
+let walkGpsWatchId    = null;  // navigator.geolocation watchPosition id
+let isRecording       = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -68,7 +119,6 @@ function addUserToSidebar(id, username) {
   li.textContent = username;
   li.title = 'Click to show route history';
   li.classList.add('clickable');
-  // Click a user to replay their recent route as a polyline.
   li.addEventListener('click', () => showRouteHistory(id, username));
   userListEl.appendChild(li);
   updateUserCount();
@@ -80,6 +130,17 @@ function removeUserFromSidebar(id) {
   const li = document.getElementById(`user-${id}`);
   if (li) li.remove();
   updateUserCount();
+}
+
+// Haversine distance in metres between two lat/lng points.
+// Used to filter GPS drift during Walk Boundary recording.
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
 }
 
 // ── Auth tab switching ────────────────────────────────────────────────────────
@@ -114,8 +175,6 @@ registerForm.addEventListener('submit', async (e) => {
       registerError.textContent = data.error || data.errors?.[0]?.msg || 'Registration failed';
       return;
     }
-
-    // Auto-login after successful registration.
     await loginWithCredentials(username, password, registerError);
   } catch {
     registerError.textContent = 'Network error — is the server running?';
@@ -162,7 +221,6 @@ function showRoomScreen(username) {
 }
 
 createRoomBtn.addEventListener('click', () => {
-  // Generate a 6-char room code client-side using crypto for randomness.
   const code = Array.from(crypto.getRandomValues(new Uint8Array(6)))
     .map(b => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[b % 36])
     .join('');
@@ -189,6 +247,8 @@ logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('geosync_token');
   localStorage.removeItem('geosync_username');
   if (socket) { socket.disconnect(); socket = null; }
+  // Stop the heatmap auto-refresh timer so it doesn't keep firing after logout.
+  if (heatmapTimer) { clearInterval(heatmapTimer); heatmapTimer = null; }
   setScreen('auth');
 });
 
@@ -201,16 +261,18 @@ function enterRoom(roomCode) {
   activeRoomCodeEl.textContent = roomCode;
   setScreen('map');
 
-  // Initialise Leaflet map once.
   if (!map) {
     map = L.map('map').setView(INDIA_CENTER, INITIAL_ZOOM);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
+
+    initDrawTools();
   }
 
-  // Connect socket with JWT — rejected server-side if token is invalid/expired.
+  loadGeofences(roomCode);
+
   socket = io({ auth: { token } });
 
   socket.on('connect', () => {
@@ -221,7 +283,6 @@ function enterRoom(roomCode) {
   socket.on('connect_error', (err) => {
     console.error('Socket connection error:', err.message);
     if (err.message.includes('Authentication')) {
-      // Token expired or invalid — force re-login.
       localStorage.removeItem('geosync_token');
       localStorage.removeItem('geosync_username');
       setScreen('auth');
@@ -239,27 +300,36 @@ function enterRoom(roomCode) {
   });
 
   socket.on('receive-location', ({ id, userId, lat, lng, username }) => {
-    // Remember the DB userId for this socket so we can request route history.
     socketUserIds[id] = userId;
 
     if (markers[id]) {
       markers[id].setLatLng([lat, lng]);
     } else {
-      markers[id] = L.marker([lat, lng]).addTo(map).bindPopup(username);
+      markers[id] = L.marker([lat, lng]).bindPopup(username);
+      // Only show live markers in Live mode — heatmap mode keeps the map clean.
+      if (viewMode === 'live') markers[id].addTo(map);
       addUserToSidebar(id, username);
     }
 
-    // Centre map on own first fix.
     if (id === socket.id && !hasCenteredOnSelf) {
       map.setView([lat, lng], 16);
       hasCenteredOnSelf = true;
     }
   });
+
+  socket.on('geofence-alert', ({ geofenceId, username, zoneName, type, timestamp }) => {
+    const verb = type === 'enter' ? 'entered' : 'left';
+    showToast(`${username} ${verb} ${zoneName}`);
+    addAlert({ geofenceId, username, zoneName, type, timestamp });
+  });
+
+  // Another room member deleted a zone — remove it from our map live.
+  socket.on('geofence-removed', ({ id }) => {
+    removeGeofenceLocally(id);
+  });
 }
 
 // ── Route history ─────────────────────────────────────────────────────────────
-// Fetch a user's recent path and draw it as a dashed polyline. Only one route
-// is shown at a time — requesting a new one replaces the previous.
 async function showRouteHistory(socketId, username) {
   const userId = socketUserIds[socketId];
   if (!userId) { showToast('No history available yet for this user.'); return; }
@@ -290,13 +360,11 @@ async function showRouteHistory(socketId, username) {
 }
 
 function clearRoute() {
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    routeLayer = null;
-  }
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   clearRouteBtn.style.display = 'none';
 }
 
+// ── GPS ───────────────────────────────────────────────────────────────────────
 function startGPS() {
   if (!('geolocation' in navigator)) {
     showToast('Geolocation is not supported by this browser.');
@@ -322,21 +390,475 @@ function startGPS() {
   );
 }
 
+// ── Geofence: load existing zones on room join ────────────────────────────────
+async function loadGeofences(roomCode) {
+  const token = localStorage.getItem('geosync_token');
+  try {
+    const res = await fetch(`/api/geofences/${roomCode}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const fences = await res.json();
+    fences.forEach(fence => renderGeofenceLayer(fence.id, fence.name, fence.geometry));
+  } catch (err) {
+    console.error('loadGeofences failed:', err.message);
+  }
+}
+
+// Returns [lat, lng] of the northernmost vertex of a GeoJSON Polygon.
+// Used to anchor the zone label on the boundary rather than the centroid,
+// so nested or overlapping zones each have clearly separated labels.
+function getTopmostLatLng(geometry) {
+  const ring = geometry.coordinates[0]; // outer ring — [[lng, lat], ...]
+  let top = ring[0];
+  for (const coord of ring) { if (coord[1] > top[1]) top = coord; }
+  return [top[1], top[0]]; // Leaflet expects [lat, lng]
+}
+
+// Render a saved geofence polygon onto the map.
+function renderGeofenceLayer(id, name, geometry) {
+  const layer = L.geoJSON({ type: 'Feature', geometry }, {
+    style: { color: '#f59e0b', weight: 2, fillOpacity: 0.15, fillColor: '#f59e0b' },
+  }).addTo(map);
+
+  // Pin the label to the northernmost vertex so it sits on the polygon edge.
+  // A divIcon marker is used instead of bindTooltip so we control exact position.
+  const labelPos = getTopmostLatLng(geometry);
+  const label = L.marker(labelPos, {
+    icon: L.divIcon({
+      className: 'zone-label',
+      html: `<span>${name}</span>`,
+      iconSize: null,       // let CSS control size
+      iconAnchor: [0, 18],  // shift up so label sits above the vertex dot
+    }),
+    interactive: false,     // labels don't capture mouse events
+    zIndexOffset: 500,
+  }).addTo(map);
+
+  layer._geofenceId = id;
+  layer._label = label;     // store so we can remove it with the zone
+  geofenceLayers[id] = layer;
+  layer.eachLayer(l => { l._geofenceId = id; drawnItems.addLayer(l); });
+}
+
+// Remove a zone from this client's map entirely — polygon, label, and its
+// alerts. Idempotent (guards on existence) so it's safe whether triggered by the
+// local delete tool or by a 'geofence-removed' broadcast from another client.
+function removeGeofenceLocally(id) {
+  const layer = geofenceLayers[id];
+  if (layer) {
+    if (layer._label) map.removeLayer(layer._label);
+    layer.eachLayer(l => { if (drawnItems.hasLayer(l)) drawnItems.removeLayer(l); });
+    if (map.hasLayer(layer)) map.removeLayer(layer);
+    delete geofenceLayers[id];
+  }
+  removeAlertsForGeofence(id);
+}
+
+// ── Geofence: Draw on Map (Leaflet.draw) ──────────────────────────────────────
+function initDrawTools() {
+  drawnItems = new L.FeatureGroup();
+  map.addLayer(drawnItems);
+
+  drawControl = new L.Control.Draw({
+    draw: {
+      polygon:      { shapeOptions: { color: '#f59e0b', fillOpacity: 0.15 } },
+      rectangle:    { shapeOptions: { color: '#f59e0b', fillOpacity: 0.15 } },
+      polyline:     false,
+      circle:       false,
+      circlemarker: false,
+      marker:       false,
+    },
+    edit: {
+      featureGroup: drawnItems,
+      remove:       true,
+    },
+  });
+  // Draw toolbar only shown in "Draw on Map" mode (added/removed on toggle).
+  map.addControl(drawControl);
+
+  map.on(L.Draw.Event.CREATED, (e) => {
+    pendingLayer = e.layer;
+    // Show the drawn shape immediately as a preview; name modal confirms it.
+    drawnItems.addLayer(pendingLayer);
+    openZoneModal(() => {
+      // On cancel: remove the preview layer.
+      drawnItems.removeLayer(pendingLayer);
+      pendingLayer = null;
+    });
+  });
+
+  map.on(L.Draw.Event.DELETED, (e) => {
+    e.layers.eachLayer(layer => {
+      const id = layer._geofenceId;
+      if (!id) return;
+
+      // Remove locally right away, then persist to the DB + notify the room.
+      removeGeofenceLocally(id);
+      deleteGeofenceFromServer(id);
+    });
+  });
+}
+
+// ── Geofence: Zone name modal ─────────────────────────────────────────────────
+// onCancel is called if the user dismisses without saving.
+function openZoneModal(onCancel) {
+  zoneNameInput.value = '';
+  zoneModal.classList.remove('hidden');
+  zoneNameInput.focus();
+
+  function cleanup() {
+    zoneModal.classList.add('hidden');
+    zoneSaveBtn.removeEventListener('click', handleSave);
+    zoneCancelBtn.removeEventListener('click', handleCancel);
+    zoneNameInput.removeEventListener('keydown', handleKey);
+  }
+
+  function handleSave() {
+    const name = zoneNameInput.value.trim();
+    if (!name) { zoneNameInput.focus(); return; }
+    cleanup();
+    saveZoneWithName(name);
+  }
+
+  function handleCancel() {
+    cleanup();
+    if (onCancel) onCancel();
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter') handleSave();
+    if (e.key === 'Escape') handleCancel();
+  }
+
+  zoneSaveBtn.addEventListener('click', handleSave);
+  zoneCancelBtn.addEventListener('click', handleCancel);
+  zoneNameInput.addEventListener('keydown', handleKey);
+}
+
+// Called with a confirmed name — determines whether we're saving a map-drawn
+// polygon (pendingLayer) or a walk-boundary polygon (walkPreview).
+async function saveZoneWithName(name) {
+  let geojsonPolygon;
+  let layerToKeep;
+
+  if (pendingLayer) {
+    // Map-draw mode: pendingLayer is already a Leaflet layer on drawnItems.
+    geojsonPolygon = pendingLayer.toGeoJSON().geometry;
+    layerToKeep = pendingLayer;
+    pendingLayer = null;
+  } else if (walkPreview) {
+    // Walk Boundary mode: walkPreview is the closed polygon layer.
+    geojsonPolygon = walkPreview.toGeoJSON().geometry;
+    layerToKeep = null; // we'll re-render via renderGeofenceLayer after save
+    map.removeLayer(walkPreview);
+    walkPreview = null;
+  } else {
+    return;
+  }
+
+  const token = localStorage.getItem('geosync_token');
+  try {
+    const res = await fetch('/api/geofences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ roomCode: currentRoomCode, name, polygon: geojsonPolygon }),
+    });
+    if (!res.ok) { showToast('Failed to save zone.'); return; }
+    const saved = await res.json();
+
+    // Remove the temporary preview layer and replace with the styled zone layer.
+    if (layerToKeep) drawnItems.removeLayer(layerToKeep);
+    renderGeofenceLayer(saved.id, name, geojsonPolygon);
+    showToast(`Zone "${name}" saved`);
+  } catch {
+    showToast('Network error saving zone.');
+  }
+}
+
+async function deleteGeofenceFromServer(id) {
+  const token = localStorage.getItem('geosync_token');
+  try {
+    // REST DELETE is the source of truth — authenticated, removes the DB row.
+    await fetch(`/api/geofences/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ roomCode: currentRoomCode }),
+    });
+    // Notify other room members so the zone vanishes from their maps live too.
+    if (socket && socket.connected) socket.emit('delete-geofence', { id });
+  } catch (err) {
+    console.error('deleteGeofence server call failed:', err.message);
+  }
+}
+
+// ── Geofence: Walk Boundary mode ──────────────────────────────────────────────
+modeMapDrawBtn.addEventListener('click', () => {
+  if (isRecording) cancelWalkRecording();
+  modeMapDrawBtn.classList.add('active');
+  modeWalkBoundaryBtn.classList.remove('active');
+  walkControls.classList.add('hidden');
+  if (drawControl && map) map.addControl(drawControl);
+});
+
+modeWalkBoundaryBtn.addEventListener('click', () => {
+  modeWalkBoundaryBtn.classList.add('active');
+  modeMapDrawBtn.classList.remove('active');
+  walkControls.classList.remove('hidden');
+  // Hide draw toolbar — user is walking, not clicking.
+  if (drawControl && map) map.removeControl(drawControl);
+});
+
+walkStartBtn.addEventListener('click', startWalkRecording);
+walkUndoBtn.addEventListener('click', undoWalkPoint);
+walkSaveBtn.addEventListener('click', () => {
+  if (walkWaypoints.length < 3) return;
+  stopWalkRecording();
+  // Build closed GeoJSON polygon from waypoints.
+  const coords = walkWaypoints.map(p => [p.lng, p.lat]);
+  coords.push(coords[0]); // close the ring
+  const polygon = { type: 'Polygon', coordinates: [coords] };
+
+  // Show a preview of the closed polygon before the name prompt.
+  walkPreview = L.polygon(walkWaypoints.map(p => [p.lat, p.lng]), {
+    color: '#f59e0b', fillOpacity: 0.2,
+  }).addTo(map);
+
+  openZoneModal(() => {
+    // Cancelled — remove preview and reset.
+    if (walkPreview) { map.removeLayer(walkPreview); walkPreview = null; }
+  });
+
+  // Stash the GeoJSON on walkPreview so saveZoneWithName can access it.
+  if (walkPreview) walkPreview.toGeoJSON = () => ({ geometry: polygon });
+
+  resetWalkUI();
+});
+
+walkCancelBtn.addEventListener('click', cancelWalkRecording);
+
+function startWalkRecording() {
+  if (!('geolocation' in navigator)) {
+    showToast('Geolocation not supported.');
+    return;
+  }
+  isRecording = true;
+  walkWaypoints = [];
+  if (walkPolyline) { map.removeLayer(walkPolyline); walkPolyline = null; }
+
+  walkStartBtn.classList.add('hidden');
+  walkCounter.classList.remove('hidden');
+  walkUndoBtn.classList.remove('hidden');
+  walkSaveBtn.classList.remove('hidden');
+  walkCancelBtn.classList.remove('hidden');
+  updateWalkCounter();
+
+  walkGpsWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (!isRecording) return;
+      const { latitude: lat, longitude: lng } = pos.coords;
+      const last = walkWaypoints[walkWaypoints.length - 1];
+      // Only add point if far enough from the previous one (filters GPS drift).
+      if (last && haversineMeters(last.lat, last.lng, lat, lng) < WALK_MIN_DISTANCE_M) return;
+      walkWaypoints.push({ lat, lng });
+      updateWalkPolyline();
+      updateWalkCounter();
+    },
+    (err) => { console.error('Walk GPS error:', err.message); },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+function stopWalkRecording() {
+  isRecording = false;
+  if (walkGpsWatchId !== null) {
+    navigator.geolocation.clearWatch(walkGpsWatchId);
+    walkGpsWatchId = null;
+  }
+  if (walkPolyline) { map.removeLayer(walkPolyline); walkPolyline = null; }
+}
+
+function cancelWalkRecording() {
+  stopWalkRecording();
+  walkWaypoints = [];
+  if (walkPolyline) { map.removeLayer(walkPolyline); walkPolyline = null; }
+  resetWalkUI();
+}
+
+function resetWalkUI() {
+  walkStartBtn.classList.remove('hidden');
+  walkCounter.classList.add('hidden');
+  walkUndoBtn.classList.add('hidden');
+  walkSaveBtn.classList.add('hidden');
+  walkCancelBtn.classList.add('hidden');
+  walkSaveBtn.disabled = true;
+  walkPointCount.textContent = '0';
+}
+
+function undoWalkPoint() {
+  if (walkWaypoints.length === 0) return;
+  walkWaypoints.pop();
+  updateWalkPolyline();
+  updateWalkCounter();
+}
+
+function updateWalkPolyline() {
+  const latLngs = walkWaypoints.map(p => [p.lat, p.lng]);
+  if (walkPolyline) {
+    walkPolyline.setLatLngs(latLngs);
+  } else {
+    walkPolyline = L.polyline(latLngs, { color: '#f59e0b', weight: 3, dashArray: '6 4' }).addTo(map);
+  }
+}
+
+function updateWalkCounter() {
+  walkPointCount.textContent = walkWaypoints.length;
+  walkSaveBtn.disabled = walkWaypoints.length < 3;
+}
+
+// ── Geofence: Alert history ───────────────────────────────────────────────────
+function addAlert({ geofenceId, username, zoneName, type, timestamp }) {
+  alerts.unshift({ geofenceId, username, zoneName, type, timestamp });
+  if (alerts.length > 10) alerts.pop();
+  renderAlerts();
+}
+
+// Drop all alerts belonging to a deleted zone so the panel stays in sync with
+// the map. Alerts are tagged with geofenceId for exactly this reason.
+function removeAlertsForGeofence(id) {
+  for (let i = alerts.length - 1; i >= 0; i--) {
+    if (alerts[i].geofenceId === id) alerts.splice(i, 1);
+  }
+  renderAlerts();
+}
+
+function renderAlerts() {
+  alertPanel.classList.toggle('hidden', alerts.length === 0);
+  alertList.innerHTML = '';
+  alerts.forEach(a => {
+    const li = document.createElement('li');
+    const time = new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const verb = a.type === 'enter' ? 'entered' : 'left';
+    li.innerHTML = `<span class="alert-dot ${a.type}">●</span>${a.username} ${verb} <strong>${a.zoneName}</strong><span class="alert-time">${time}</span>`;
+    alertList.appendChild(li);
+  });
+}
+
+// ── Heatmap mode ──────────────────────────────────────────────────────────────
+const HEATMAP_REFRESH_MS = 60 * 1000; // auto-refresh cadence while in heatmap mode
+
+viewLiveBtn.addEventListener('click', () => setViewMode('live'));
+viewHeatmapBtn.addEventListener('click', () => setViewMode('heatmap'));
+heatmapRangeSel.addEventListener('change', loadHeatmap);
+
+function setViewMode(mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+
+  viewLiveBtn.classList.toggle('active', mode === 'live');
+  viewHeatmapBtn.classList.toggle('active', mode === 'heatmap');
+
+  if (mode === 'heatmap') {
+    enterHeatmapMode();
+  } else {
+    enterLiveMode();
+  }
+}
+
+function enterHeatmapMode() {
+  // Cancel any in-progress walk recording — drawing makes no sense in heatmap view.
+  if (isRecording) cancelWalkRecording();
+
+  // Hide live-mode controls + the draw toolbar.
+  drawModeToggle.classList.add('hidden');
+  walkControls.classList.add('hidden');
+  if (drawControl && map) map.removeControl(drawControl);
+
+  // Hide live markers and any displayed route polyline.
+  Object.values(markers).forEach(m => { if (map.hasLayer(m)) map.removeLayer(m); });
+  clearRoute();
+
+  // Show heatmap controls and load the layer.
+  heatmapControls.classList.remove('hidden');
+  loadHeatmap();
+  heatmapTimer = setInterval(loadHeatmap, HEATMAP_REFRESH_MS);
+}
+
+function enterLiveMode() {
+  // Stop auto-refresh and remove the heat layer.
+  if (heatmapTimer) { clearInterval(heatmapTimer); heatmapTimer = null; }
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  heatmapControls.classList.add('hidden');
+
+  // Restore live markers.
+  Object.values(markers).forEach(m => { if (!map.hasLayer(m)) m.addTo(map); });
+
+  // Restore the draw toolbar only if Draw on Map is the active sub-mode.
+  drawModeToggle.classList.remove('hidden');
+  if (modeMapDrawBtn.classList.contains('active') && drawControl && map) {
+    map.addControl(drawControl);
+  }
+}
+
+async function loadHeatmap() {
+  if (!currentRoomCode) return;
+  const hours = Number(heatmapRangeSel.value);
+  const from = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const to = new Date().toISOString();
+
+  const token = localStorage.getItem('geosync_token');
+  heatmapSpinner.classList.remove('hidden');
+  try {
+    const res = await fetch(`/api/heatmap/${currentRoomCode}?from=${from}&to=${to}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) { showToast('Could not load heatmap.'); return; }
+    const { points } = await res.json();
+    renderHeat(points);
+  } catch {
+    showToast('Network error loading heatmap.');
+  } finally {
+    heatmapSpinner.classList.add('hidden');
+  }
+}
+
+function renderHeat(points) {
+  // A stale fetch could resolve after the user switched back to Live — ignore it.
+  if (viewMode !== 'heatmap') return;
+
+  if (!points || points.length === 0) {
+    if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+    showToast('No location history in this range yet.');
+    return;
+  }
+
+  // Leaflet.heat takes [lat, lng, intensity]. Normalise weight to [0,1] against
+  // the densest cell so the gradient scales to whatever data the room has.
+  const maxWeight = points.reduce((m, p) => Math.max(m, p.weight), 0);
+  const heatPoints = points.map(p => [p.lat, p.lng, p.weight / maxWeight]);
+
+  if (heatLayer) {
+    heatLayer.setLatLngs(heatPoints);
+  } else {
+    heatLayer = L.heatLayer(heatPoints, {
+      radius: 25,
+      blur: 15,
+      maxZoom: 17,
+      gradient: { 0.0: 'blue', 0.5: 'lime', 0.7: 'yellow', 1.0: 'red' },
+    }).addTo(map);
+  }
+}
+
 // ── Boot: check for existing valid token ──────────────────────────────────────
 (function boot() {
   const token = localStorage.getItem('geosync_token');
   const username = localStorage.getItem('geosync_username');
 
-  if (!token || !username) {
-    setScreen('auth');
-    return;
-  }
+  if (!token || !username) { setScreen('auth'); return; }
 
-  // Decode expiry without a library — jwt payload is base64url encoded.
   try {
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     if (payload.exp * 1000 < Date.now()) {
-      // Token expired — clear and show login.
       localStorage.removeItem('geosync_token');
       localStorage.removeItem('geosync_username');
       setScreen('auth');
@@ -347,6 +869,5 @@ function startGPS() {
     return;
   }
 
-  // Valid token — skip login and go straight to room selection.
   showRoomScreen(username);
 })();

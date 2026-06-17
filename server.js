@@ -12,6 +12,8 @@ const { createAdapter } = require('@socket.io/redis-adapter');
 
 const authRouter = require('./src/routes/auth');
 const historyRouter = require('./src/routes/history');
+const geofencesRouter = require('./src/routes/geofences');
+const heatmapRouter = require('./src/routes/heatmap');
 const { apiLimiter } = require('./src/middleware/rate-limiter');
 const { socketAuthMiddleware } = require('./src/socket/middleware');
 const { registerSocketHandlers } = require('./src/socket/handlers');
@@ -29,6 +31,10 @@ const pubClient = new Redis({
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,
   password: process.env.REDIS_PASSWORD || undefined,
+  // Retry forever instead of throwing after 20 attempts — a Redis outage must be
+  // logged, never crash the server (Phase 5 requirement). Without this, queued
+  // adapter commands raise an unhandled MaxRetriesPerRequestError when Redis is down.
+  maxRetriesPerRequest: null,
 });
 const subClient = pubClient.duplicate();
 
@@ -81,6 +87,12 @@ app.use('/api', authRouter);
 
 // History routes — protected by verifyToken inside the router.
 app.use('/api', historyRouter);
+
+// Geofence routes — POST/GET/DELETE, all protected by verifyToken inside the router.
+app.use('/api', geofencesRouter);
+
+// Heatmap route — GET aggregated density points, protected by verifyToken inside.
+app.use('/api', heatmapRouter);
 
 // Socket.IO — reject unauthenticated connections before any handler runs.
 io.use(socketAuthMiddleware);
