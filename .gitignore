@@ -11,3 +11,12 @@ npm-debug.log*
 # OS / editor cruft
 .DS_Store
 Thumbs.db
+
+# Internal planning/working docs — kept local only, not published to remote
+ARCHITECTURE.md
+CLAUDE.md
+CONVENTIONS.md
+ENV.md
+MOBILE-MIGRATION.md
+TECH-STACK.md
+TO-DO.md
