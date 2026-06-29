@@ -13,7 +13,18 @@ const redisClient = new Redis({
   maxRetriesPerRequest: null,
 });
 
-redisClient.on('connect', () => console.log('Redis client connected'));
-redisClient.on('error', (err) => console.error('Redis client error:', err.message));
+// Log the first connection error then suppress (re-armed on connect) so a Redis
+// outage doesn't flood the console with one line per retry. Geofence state
+// (the only consumer) simply won't track enter/exit transitions while Redis is down.
+let clientErrorLogged = false;
+redisClient.on('connect', () => {
+  clientErrorLogged = false;
+  console.log('Redis client connected');
+});
+redisClient.on('error', (err) => {
+  if (clientErrorLogged) return;
+  clientErrorLogged = true;
+  console.warn(`Redis client unavailable (${err.message || 'connection failed'}) — geofence state disabled until Redis returns. Further errors suppressed.`);
+});
 
 module.exports = redisClient;

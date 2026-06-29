@@ -3,7 +3,6 @@ require('dotenv').config();
 
 const express = require('express');
 const http = require('http');
-const path = require('path');
 const { Server } = require('socket.io');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -39,8 +38,19 @@ const pubClient = new Redis({
 const subClient = pubClient.duplicate();
 
 // Redis failure must log, not crash — the app still serves a single instance.
-pubClient.on('error', (err) => console.error('Redis pub error:', err.message));
-subClient.on('error', (err) => console.error('Redis sub error:', err.message));
+// Log only the FIRST error then suppress (reset on reconnect) so a Redis outage
+// doesn't flood the console with one line per retry.
+let redisAdapterErrorLogged = false;
+const onRedisAdapterError = (err) => {
+  if (redisAdapterErrorLogged) return;
+  redisAdapterErrorLogged = true;
+  console.warn(
+    `Redis unavailable (${err.message || 'connection failed'}) — running single-instance without the Redis adapter. Further Redis errors suppressed.`
+  );
+};
+pubClient.on('error', onRedisAdapterError);
+subClient.on('error', onRedisAdapterError);
+pubClient.on('ready', () => { redisAdapterErrorLogged = false; }); // re-arm if Redis returns
 
 // Every io.to(room).emit() is now published through Redis and fanned out to all
 // instances subscribed to that channel. Transparent — no handler changes needed.
@@ -77,7 +87,8 @@ app.use(
 app.use(cors({ origin: process.env.CLIENT_ORIGIN }));
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Note: GeoSync is now mobile-only (React Native app in mobile/). The backend is
+// a pure JSON/Socket.IO API — no static web frontend is served.
 
 // General rate limiter on all API routes — stops bulk scraping and abuse.
 app.use('/api', apiLimiter);
