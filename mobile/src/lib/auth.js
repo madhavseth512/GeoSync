@@ -23,17 +23,30 @@ export async function clearSession() {
   await AsyncStorage.multiRemove([TOKEN_KEY, USERNAME_KEY]);
 }
 
-// Lightweight JWT expiry check. RN (Hermes) provides atob; if decoding fails for
-// any reason we treat the token as unusable and force re-login. We do NOT trust
-// this for security — the server still verifies every token. It just avoids
-// showing the room screen with an obviously-expired token on boot.
-export function isTokenExpired(token) {
+// Decode the JWT payload. Not a security check — the server verifies every token;
+// this just lets the client read its own userId/expiry without another round trip.
+function decodeToken(token) {
   try {
-    const payload = JSON.parse(
-      atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
-    );
-    return payload.exp * 1000 < Date.now();
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
   } catch {
-    return true;
+    return null;
   }
+}
+
+// Lightweight JWT expiry check — avoids showing the room screen with an
+// obviously-expired token on boot.
+export function isTokenExpired(token) {
+  const payload = decodeToken(token);
+  if (!payload) return true;
+  return payload.exp * 1000 < Date.now();
+}
+
+// Our own userId, read from the JWT ({ userId, username }). Used to tell which
+// map marker is us — markers are keyed by userId, so matching on username would
+// be fragile.
+export async function getUserId() {
+  const token = await getToken();
+  if (!token) return null;
+  const payload = decodeToken(token);
+  return payload?.userId ?? null;
 }

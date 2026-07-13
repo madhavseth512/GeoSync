@@ -27,7 +27,9 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { roomCode, name, polygon } = req.body;
-    const userId = req.user.id;
+    // JWT payload is { userId, username } — req.user.id would be undefined and
+    // silently store created_by as NULL.
+    const userId = req.user.userId;
 
     try {
       const geofence = await saveGeofence(roomCode, name, polygon, userId);

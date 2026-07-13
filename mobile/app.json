@@ -17,7 +17,14 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -27,9 +34,17 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "GeoSync uses your location to share your live position with others in your room."
+          "locationWhenInUsePermission": "GeoSync uses your location to share your live position with others in your room.",
+          "locationAlwaysAndWhenInUsePermission": "GeoSync shares your location with your room even when the app is closed, so your group can see where you are while you travel.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ab14ae61-747a-41c8-8de1-d68966578940"
+      }
+    }
   }
 }

@@ -13,6 +13,7 @@ const authRouter = require('./src/routes/auth');
 const historyRouter = require('./src/routes/history');
 const geofencesRouter = require('./src/routes/geofences');
 const heatmapRouter = require('./src/routes/heatmap');
+const createLocationRouter = require('./src/routes/location');
 const { apiLimiter } = require('./src/middleware/rate-limiter');
 const { socketAuthMiddleware } = require('./src/socket/middleware');
 const { registerSocketHandlers } = require('./src/socket/handlers');
@@ -90,6 +91,9 @@ app.use(express.json());
 // Note: GeoSync is now mobile-only (React Native app in mobile/). The backend is
 // a pure JSON/Socket.IO API — no static web frontend is served.
 
+// Health check — used by the cloud host (Render) to verify the service is up.
+app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
 // General rate limiter on all API routes — stops bulk scraping and abuse.
 app.use('/api', apiLimiter);
 
@@ -104,6 +108,11 @@ app.use('/api', geofencesRouter);
 
 // Heatmap route — GET aggregated density points, protected by verifyToken inside.
 app.use('/api', heatmapRouter);
+
+// Location ingest — POST /api/location. This is how BACKGROUND tracking reports
+// position: a WebSocket can't survive the phone locking, but an HTTP request can.
+// Needs `io` so a REST ping broadcasts to the room just like a socket ping.
+app.use('/api', createLocationRouter(io));
 
 // Socket.IO — reject unauthenticated connections before any handler runs.
 io.use(socketAuthMiddleware);

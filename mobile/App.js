@@ -11,6 +11,11 @@ import MapScreen from './src/screens/MapScreen';
 import { getToken, isTokenExpired } from './src/lib/auth';
 import { colors } from './src/lib/theme';
 
+// Importing this registers the background location task with TaskManager. It
+// MUST happen at module scope on app startup — the OS may launch the app
+// headlessly to deliver a location, and the task has to already be defined.
+import './src/lib/location-task';
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
