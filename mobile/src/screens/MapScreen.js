@@ -14,12 +14,21 @@ import { colors, colorForUser } from '../lib/theme';
 import { haversineMeters, formatDistance } from '../lib/geo';
 import {
   requestTrackingPermissions, startBackgroundTracking, stopBackgroundTracking,
-  setActiveRoom, clearActiveRoom,
+  setActiveRoom, clearActiveRoom, postLocation,
 } from '../lib/location-task';
 
 const INDIA_CENTER = [78.9629, 20.5937]; // MapLibre is [lng, lat]
 const INITIAL_ZOOM = 4;
-const STALE_MS = 5 * 60 * 1000;
+
+// A stationary user legitimately stops sending (distance-based sampling), so they
+// are NOT gone — don't drop them from the map too eagerly. The heartbeat below
+// keeps anyone with the app open well inside this window.
+const STALE_MS = 20 * 60 * 1000;
+
+// While the app is open, re-report our position even if we haven't moved, so we
+// stay fresh for everyone else and don't age out.
+const HEARTBEAT_MS = 2 * 60 * 1000;
+
 const WALK_MIN_DISTANCE_M = 5;  // filter GPS drift while tracing a boundary
 const MAX_ALERTS = 20;
 
@@ -117,17 +126,22 @@ export default function MapScreen({ route, navigation }) {
       catch (err) { console.error('startBackgroundTracking failed:', err.message); }
 
       // Show ourselves immediately from the device's own GPS, and keep that marker
-      // live. Display-only — the background task does the actual reporting.
+      // live. Display-only — the background task does the ongoing reporting.
       try {
         const here = await Location.getCurrentPositionAsync({});
         if (active) {
-          setSelfLoc({ lat: here.coords.latitude, lng: here.coords.longitude });
+          const lat = here.coords.latitude;
+          const lng = here.coords.longitude;
+          setSelfLoc({ lat, lng });
+
+          // "I'm here" ping. Essential: distance-based sampling means a
+          // stationary device never triggers the background task, so without this
+          // a user who joins and doesn't move is never reported at all.
+          postLocation(lat, lng);
+
           if (!centeredRef.current) {
             centeredRef.current = true;
-            cameraRef.current?.flyTo({
-              center: [here.coords.longitude, here.coords.latitude],
-              zoom: 15, duration: 800,
-            });
+            cameraRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
           }
         }
       } catch { /* no fix yet */ }
@@ -196,6 +210,23 @@ export default function MapScreen({ route, navigation }) {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, [roomCode]);
+
+  // Heartbeat: re-report our position periodically even when standing still, so
+  // others don't see us age out. Cheap — one request every couple of minutes.
+  //
+  // Read the position through a ref, not the state value: selfLoc updates on every
+  // GPS fix, and depending on it directly would tear down and recreate this
+  // interval constantly, so it would almost never actually fire.
+  const selfLocRef = useRef(null);
+  useEffect(() => { selfLocRef.current = selfLoc; }, [selfLoc]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const p = selfLocRef.current;
+      if (p) postLocation(p.lat, p.lng);
+    }, HEARTBEAT_MS);
+    return () => clearInterval(t);
+  }, []);
 
   // ── Geofences ───────────────────────────────────────────────────────────────
   async function loadZones() {

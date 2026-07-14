@@ -62,6 +62,27 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   }
 });
 
+// Post a single position to the API. Used by the background task, by the "I'm
+// here" ping on joining a room, and by the foreground heartbeat.
+export async function postLocation(lat, lng) {
+  const [token, roomCode] = await Promise.all([
+    AsyncStorage.getItem(TOKEN_KEY),
+    AsyncStorage.getItem(ROOM_KEY),
+  ]);
+  if (!token || !roomCode) return false;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ roomCode, lat, lng }),
+    });
+    return res.ok;
+  } catch {
+    return false; // offline — the next fix carries a fresher position anyway
+  }
+}
+
 // ── Start / stop ──────────────────────────────────────────────────────────────
 export async function startBackgroundTracking() {
   if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK)) return;
@@ -69,9 +90,15 @@ export async function startBackgroundTracking() {
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
     accuracy: Location.Accuracy.Balanced,
 
-    // Distance-based sampling: only ping after the user has ACTUALLY moved.
+    // Distance-based sampling: only report after the user has ACTUALLY moved.
     // This is the big win — it cuts pings (and battery, DB rows, and Redis
     // commands) by ~35x versus firing every 5 seconds while standing still.
+    //
+    // IMPORTANT TRAP: on Android this maps to smallestDisplacement, which means a
+    // STATIONARY device receives NO updates at all — timeInterval does not
+    // override it. So this alone would make a motionless user invisible forever.
+    // That's why callers must also send an initial "I'm here" ping on joining a
+    // room, plus a heartbeat while the app is open (see postLocation).
     distanceInterval: PING_DISTANCE_M,
     timeInterval: PING_MIN_INTERVAL_MS,
 
