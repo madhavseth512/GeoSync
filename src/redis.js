@@ -24,7 +24,7 @@ redisClient.on('connect', () => {
 redisClient.on('error', (err) => {
   if (clientErrorLogged) return;
   clientErrorLogged = true;
-  console.warn(`Redis client unavailable (${err.message || 'connection failed'}) — geofence state disabled until Redis returns. Further errors suppressed.`);
+  console.warn(`Redis client unavailable (${err.message || 'connection failed'}) — geofence state falls back to in-memory (fine for a single instance). Further errors suppressed.`);
 });
 
 module.exports = redisClient;

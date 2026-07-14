@@ -24,43 +24,52 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Redis Pub/Sub adapter — makes Socket.IO broadcasts work across multiple Node
-// instances. Pub/Sub needs two separate connections: a subscriber client cannot
-// also issue normal commands, so we duplicate the publisher for subscribing.
-const pubClient = new Redis({
-  host: process.env.REDIS_HOST,
-  port: process.env.REDIS_PORT,
-  password: process.env.REDIS_PASSWORD || undefined,
-  // Retry forever instead of throwing after 20 attempts — a Redis outage must be
-  // logged, never crash the server (Phase 5 requirement). Without this, queued
-  // adapter commands raise an unhandled MaxRetriesPerRequestError when Redis is down.
-  maxRetriesPerRequest: null,
-});
-const subClient = pubClient.duplicate();
-
-// Redis failure must log, not crash — the app still serves a single instance.
-// Log only the FIRST error then suppress (reset on reconnect) so a Redis outage
-// doesn't flood the console with one line per retry.
-let redisAdapterErrorLogged = false;
-const onRedisAdapterError = (err) => {
-  if (redisAdapterErrorLogged) return;
-  redisAdapterErrorLogged = true;
-  console.warn(
-    `Redis unavailable (${err.message || 'connection failed'}) — running single-instance without the Redis adapter. Further Redis errors suppressed.`
-  );
-};
-pubClient.on('error', onRedisAdapterError);
-subClient.on('error', onRedisAdapterError);
-pubClient.on('ready', () => { redisAdapterErrorLogged = false; }); // re-arm if Redis returns
-
-// Every io.to(room).emit() is now published through Redis and fanned out to all
-// instances subscribed to that channel. Transparent — no handler changes needed.
+// ── Socket.IO adapter ────────────────────────────────────────────────────────
+// The Redis Pub/Sub adapter exists to fan broadcasts out across MULTIPLE Node
+// instances. It is opt-in (USE_REDIS_ADAPTER=true) for a deliberate reason: with
+// a single instance there are no peers to fan out to, so the adapter would cost a
+// Redis PUBLISH on every broadcast for zero benefit — real money on a metered
+// free tier. Production runs single-instance; the multi-instance path is kept and
+// switched on by config.
 //
-// Verified (Phase 5): ran two instances (PORT=3000 and PORT=3001), connected a
-// client to each, both joined the same room. A location emitted on the 3000
-// client was received by the 3001 client via Redis. With Redis unreachable the
-// server still serves HTTP and logs errors without crashing.
-io.adapter(createAdapter(pubClient, subClient));
+// Verified (Phase 5): two instances (PORT=3000 and PORT=3001), a client on each,
+// both in the same room — a location emitted on 3000 was received on 3001 via
+// Redis. With Redis unreachable the server still serves HTTP without crashing.
+//
+// NOTE: this is separate from src/redis.js, which holds geofence state. That
+// client is always available; only the broadcast adapter is gated here.
+if (process.env.USE_REDIS_ADAPTER === 'true') {
+  // Pub/Sub needs two connections: a subscriber cannot also issue normal commands.
+  const pubClient = new Redis({
+    host: process.env.REDIS_HOST,
+    port: process.env.REDIS_PORT,
+    password: process.env.REDIS_PASSWORD || undefined,
+    // Retry forever rather than throwing after 20 attempts — a Redis outage must
+    // be logged, never crash the server. Without this, queued adapter commands
+    // raise an unhandled MaxRetriesPerRequestError when Redis is down.
+    maxRetriesPerRequest: null,
+  });
+  const subClient = pubClient.duplicate();
+
+  // Log only the FIRST error, then suppress (re-armed on reconnect), so an outage
+  // doesn't flood the console with a line per retry.
+  let adapterErrorLogged = false;
+  const onAdapterError = (err) => {
+    if (adapterErrorLogged) return;
+    adapterErrorLogged = true;
+    console.warn(
+      `Redis adapter unavailable (${err.message || 'connection failed'}) — broadcasts stay local to this instance. Further errors suppressed.`
+    );
+  };
+  pubClient.on('error', onAdapterError);
+  subClient.on('error', onAdapterError);
+  pubClient.on('ready', () => { adapterErrorLogged = false; });
+
+  io.adapter(createAdapter(pubClient, subClient));
+  console.log('Socket.IO: Redis adapter enabled (multi-instance mode)');
+} else {
+  console.log('Socket.IO: in-memory adapter (single instance). Set USE_REDIS_ADAPTER=true to scale out.');
+}
 
 // Secure HTTP headers — protects against XSS, clickjacking, MIME sniffing, etc.
 // CSP is customised to allow the specific external origins GeoSync uses: the
