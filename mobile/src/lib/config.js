@@ -1,17 +1,13 @@
 // Central configuration for the GeoSync mobile app.
 //
-// API_BASE_URL must point at the running GeoSync backend. Pick the right value
-// for how you're testing:
-//   - Android emulator → host machine:  http://10.0.2.2:3000
-//   - Physical device on same Wi-Fi:     http://<your-PC-LAN-IP>:3000
-//   - Production (set in M1):            the deployed HTTPS URL
+// API_BASE_URL points at the deployed backend (Render + Neon Postgres/PostGIS).
+// This MUST be the public HTTPS URL for the shared APK: friends' phones are on
+// their own mobile networks and cannot reach a laptop on your Wi-Fi.
 //
-// This is overridden with the free cloud deployment URL once M1 is done.
-//
-// Current value = Android emulator's alias for the host PC's localhost.
-// (A physical phone via Wi-Fi would instead use this PC's LAN IP, e.g.
-// http://192.168.29.216:3000.)
-export const API_BASE_URL = 'http://10.0.2.2:3000';
+// For local development against a backend on this machine, swap it for:
+//   - Android emulator → host:        http://10.0.2.2:3000
+//   - Physical phone on same Wi-Fi:   http://<this-PC's-LAN-IP>:3000
+export const API_BASE_URL = 'https://geosync-api-vh6b.onrender.com';
 
 // ── Location sampling ────────────────────────────────────────────────────────
 // Distance-based, NOT time-based. We only report a position once the user has
