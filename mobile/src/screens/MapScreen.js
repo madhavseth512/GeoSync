@@ -125,26 +125,15 @@ export default function MapScreen({ route, navigation }) {
       try { await startBackgroundTracking(); }
       catch (err) { console.error('startBackgroundTracking failed:', err.message); }
 
-      // Show ourselves immediately from the device's own GPS, and keep that marker
-      // live. Display-only — the background task does the ongoing reporting.
+      // Try for an immediate fix. This can fail (device has no fix yet — very
+      // common on a fresh emulator with no mock location set), so it must NOT be
+      // the only path that reports us: the watch below covers that case.
       try {
         const here = await Location.getCurrentPositionAsync({});
         if (active) {
-          const lat = here.coords.latitude;
-          const lng = here.coords.longitude;
-          setSelfLoc({ lat, lng });
-
-          // "I'm here" ping. Essential: distance-based sampling means a
-          // stationary device never triggers the background task, so without this
-          // a user who joins and doesn't move is never reported at all.
-          postLocation(lat, lng);
-
-          if (!centeredRef.current) {
-            centeredRef.current = true;
-            cameraRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
-          }
+          setSelfLoc({ lat: here.coords.latitude, lng: here.coords.longitude });
         }
-      } catch { /* no fix yet */ }
+      } catch { /* no fix yet — the watch will deliver one when it arrives */ }
 
       // A small distanceInterval here is fine: this never hits the network, it
       // just keeps our own pin under our feet.
@@ -210,6 +199,23 @@ export default function MapScreen({ route, navigation }) {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, [roomCode]);
+
+  // On our FIRST fix — from whichever source delivers it — centre the camera and
+  // send the "I'm here" ping. Doing it here rather than inside the initial
+  // getCurrentPositionAsync matters: on a fresh emulator (or a phone with no fix
+  // yet) that call fails, and we'd otherwise never report ourselves at all.
+  const initialPingSent = useRef(false);
+  useEffect(() => {
+    if (!selfLoc || initialPingSent.current) return;
+    initialPingSent.current = true;
+
+    postLocation(selfLoc.lat, selfLoc.lng);
+
+    if (!centeredRef.current) {
+      centeredRef.current = true;
+      cameraRef.current?.flyTo({ center: [selfLoc.lng, selfLoc.lat], zoom: 15, duration: 800 });
+    }
+  }, [selfLoc]);
 
   // Heartbeat: re-report our position periodically even when standing still, so
   // others don't see us age out. Cheap — one request every couple of minutes.
@@ -657,11 +663,23 @@ export default function MapScreen({ route, navigation }) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.uname}>You</Text>
                 <Text style={styles.udist}>
-                  {status === 'Live' ? (bgActive ? 'Sharing (even when locked)' : 'Sharing while open') : status}
+                  {!selfLoc
+                    ? 'Waiting for GPS fix…'
+                    : status === 'Live'
+                      ? (bgActive ? 'Sharing (even when locked)' : 'Sharing while open')
+                      : status}
                 </Text>
               </View>
-              <View style={[styles.badge, { backgroundColor: colors.greenDim }]}>
-                <Text style={[styles.badgeText, { color: colors.green }]}>Live</Text>
+              <View style={[
+                styles.badge,
+                { backgroundColor: selfLoc ? colors.greenDim : colors.cardBg },
+              ]}>
+                <Text style={[
+                  styles.badgeText,
+                  { color: selfLoc ? colors.green : colors.text3 },
+                ]}>
+                  {selfLoc ? 'Live' : 'No GPS'}
+                </Text>
               </View>
             </View>
 
