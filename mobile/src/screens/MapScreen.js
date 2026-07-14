@@ -129,16 +129,21 @@ export default function MapScreen({ route, navigation }) {
       // common on a fresh emulator with no mock location set), so it must NOT be
       // the only path that reports us: the watch below covers that case.
       try {
-        const here = await Location.getCurrentPositionAsync({});
+        const here = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
         if (active) {
           setSelfLoc({ lat: here.coords.latitude, lng: here.coords.longitude });
         }
       } catch { /* no fix yet — the watch will deliver one when it arrives */ }
 
-      // A small distanceInterval here is fine: this never hits the network, it
-      // just keeps our own pin under our feet.
+      // Accuracy.High so this uses the GPS provider. Balanced leans on the
+      // network/coarse provider, which some devices (and the emulator) don't
+      // expose at all — the watch would then simply never fire.
+      // Small distanceInterval is fine here: this never hits the network, it just
+      // keeps our own pin under our feet.
       selfLocSubRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, distanceInterval: 5 },
+        { accuracy: Location.Accuracy.High, distanceInterval: 5 },
         (loc) => {
           if (!active) return;
           setSelfLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });

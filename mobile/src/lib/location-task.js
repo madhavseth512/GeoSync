@@ -88,7 +88,14 @@ export async function startBackgroundTracking() {
   if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK)) return;
 
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-    accuracy: Location.Accuracy.Balanced,
+    // High (not Balanced) on purpose. Two reasons:
+    //  1. Balanced maps to PRIORITY_BALANCED_POWER_ACCURACY, which leans on the
+    //     network/coarse provider. Devices (and emulators) that only expose the
+    //     GPS provider then never deliver a fix at all — the app just waits forever.
+    //  2. Balanced is ~100 m accurate, which is useless when we sample on 30 m of
+    //     movement and run geofence containment. GPS accuracy is the product need.
+    // Battery is protected by distance-based sampling, not by degrading accuracy.
+    accuracy: Location.Accuracy.High,
 
     // Distance-based sampling: only report after the user has ACTUALLY moved.
     // This is the big win — it cuts pings (and battery, DB rows, and Redis
