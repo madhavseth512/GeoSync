@@ -1,0 +1,62 @@
+# Render blueprint for the GeoSync backend (free tier).
+#
+# The backend is a pure JSON + Socket.IO API — the frontend is the Android app in
+# mobile/, so nothing static is served here.
+#
+# Database and Redis are NOT provisioned here: we use external free tiers (Neon
+# for Postgres+PostGIS, Redis Cloud/Upstash for Redis) and inject their connection
+# strings as secrets. See DEPLOY.md.
+services:
+  - type: web
+    name: geosync-api
+    runtime: node
+    plan: free
+    region: singapore # closest to India; change if you prefer
+
+    buildCommand: npm ci
+    startCommand: node server.js
+
+    # Render polls this to decide the service is healthy.
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render terminates TLS at a proxy, so Express must trust one hop —
+      # otherwise express-rate-limit keys every user to the proxy's IP.
+      - key: TRUST_PROXY
+        value: "true"
+
+      # Free tier runs ONE instance, so the Socket.IO Redis adapter would spend a
+      # PUBLISH per broadcast with no peers to fan out to. Keep it off.
+      - key: USE_REDIS_ADAPTER
+        value: "false"
+
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong secret; never commit one
+      - key: JWT_EXPIRY
+        value: 24h
+
+      # Set these by hand in the Render dashboard (marked secret, not in git):
+      #   DATABASE_URL -> Neon connection string (TLS required)
+      #   REDIS_URL    -> optional; omit to use the in-memory geofence-state fallback
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+
+      - key: DB_MAX_CONNECTIONS
+        value: "10"
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_AUTH_MAX
+        value: "20"
+      - key: RATE_LIMIT_API_MAX
+        value: "100"
+      - key: RATE_LIMIT_LOCATION_MAX
+        value: "60"
+      - key: SOCKET_THROTTLE_INTERVAL_MS
+        value: "4000"
+      - key: SOCKET_MAX_VIOLATIONS
+        value: "10"

@@ -24,6 +24,15 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
+// Behind a cloud proxy (Render, etc.) every request arrives from the proxy's IP.
+// Without this, express-rate-limit would key all users to that single address —
+// one person could burn down everyone's budget — and v7 warns about the
+// misconfiguration. Trust exactly one hop; never enable this when not proxied,
+// as clients could then spoof X-Forwarded-For to dodge rate limits.
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
 // ── Socket.IO adapter ────────────────────────────────────────────────────────
 // The Redis Pub/Sub adapter exists to fan broadcasts out across MULTIPLE Node
 // instances. It is opt-in (USE_REDIS_ADAPTER=true) for a deliberate reason: with
@@ -40,15 +49,19 @@ const PORT = process.env.PORT || 3000;
 // client is always available; only the broadcast adapter is gated here.
 if (process.env.USE_REDIS_ADAPTER === 'true') {
   // Pub/Sub needs two connections: a subscriber cannot also issue normal commands.
-  const pubClient = new Redis({
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-    password: process.env.REDIS_PASSWORD || undefined,
-    // Retry forever rather than throwing after 20 attempts — a Redis outage must
-    // be logged, never crash the server. Without this, queued adapter commands
-    // raise an unhandled MaxRetriesPerRequestError when Redis is down.
-    maxRetriesPerRequest: null,
-  });
+  // Managed Redis supplies a single REDIS_URL; local dev uses discrete host/port.
+  //
+  // maxRetriesPerRequest: null — retry forever rather than throwing after 20
+  // attempts. Without it, queued adapter commands raise an unhandled
+  // MaxRetriesPerRequestError and kill the process when Redis is down.
+  const pubClient = process.env.REDIS_URL
+    ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+    : new Redis({
+        host: process.env.REDIS_HOST,
+        port: process.env.REDIS_PORT,
+        password: process.env.REDIS_PASSWORD || undefined,
+        maxRetriesPerRequest: null,
+      });
   const subClient = pubClient.duplicate();
 
   // Log only the FIRST error, then suppress (re-armed on reconnect), so an outage
