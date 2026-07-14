@@ -61,6 +61,12 @@ export default function MapScreen({ route, navigation }) {
   const [selfId, setSelfId] = useState(null);
   const [selfName, setSelfName] = useState('');
 
+  // Our own position, read straight from the device GPS — NOT from the server
+  // echo. Pings are distance-based (~30 m), so waiting for a round-trip would
+  // leave you invisible on your own map until you'd walked far enough. This is
+  // display-only; sending is still handled by the background task.
+  const [selfLoc, setSelfLoc] = useState(null); // { lat, lng }
+
   const [mode, setMode] = useState('live'); // live | zones | heatmap | history | alerts
   const [rangeHours, setRangeHours] = useState(6);
   const [heat, setHeat] = useState(null);
@@ -82,6 +88,7 @@ export default function MapScreen({ route, navigation }) {
   const cameraRef = useRef(null);
   const centeredRef = useRef(false);
   const walkSubRef = useRef(null);
+  const selfLocSubRef = useRef(null);
 
   useEffect(() => {
     getUserId().then((id) => setSelfId(id == null ? null : String(id)));
@@ -109,16 +116,31 @@ export default function MapScreen({ route, navigation }) {
       try { await startBackgroundTracking(); }
       catch (err) { console.error('startBackgroundTracking failed:', err.message); }
 
+      // Show ourselves immediately from the device's own GPS, and keep that marker
+      // live. Display-only — the background task does the actual reporting.
       try {
         const here = await Location.getCurrentPositionAsync({});
-        if (active && !centeredRef.current) {
-          centeredRef.current = true;
-          cameraRef.current?.flyTo({
-            center: [here.coords.longitude, here.coords.latitude],
-            zoom: 15, duration: 800,
-          });
+        if (active) {
+          setSelfLoc({ lat: here.coords.latitude, lng: here.coords.longitude });
+          if (!centeredRef.current) {
+            centeredRef.current = true;
+            cameraRef.current?.flyTo({
+              center: [here.coords.longitude, here.coords.latitude],
+              zoom: 15, duration: 800,
+            });
+          }
         }
       } catch { /* no fix yet */ }
+
+      // A small distanceInterval here is fine: this never hits the network, it
+      // just keeps our own pin under our feet.
+      selfLocSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 5 },
+        (loc) => {
+          if (!active) return;
+          setSelfLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        }
+      );
 
       loadZones();
 
@@ -170,6 +192,7 @@ export default function MapScreen({ route, navigation }) {
       active = false;
       clearInterval(pruner);
       if (walkSubRef.current) walkSubRef.current.remove();
+      if (selfLocSubRef.current) selfLocSubRef.current.remove();
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, [roomCode]);
@@ -348,11 +371,13 @@ export default function MapScreen({ route, navigation }) {
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
+  // Our own pin comes from selfLoc (device GPS, always current). The socket
+  // markers map holds everyone — so drop our own echo from it to avoid a
+  // duplicate, stale pin sitting where we last pinged from.
   const entries = Object.entries(markers);
-  const self = entries.find(([id]) => id === selfId);
   const others = entries.filter(([id]) => id !== selfId);
-  const selfPos = self ? self[1] : null;
-  const selfLabel = selfPos?.username || selfName;
+  const selfPos = selfLoc;
+  const selfLabel = selfName;
 
   const maxWeight = heat ? Math.max(...heat.features.map((f) => f.properties.weight), 1) : 1;
 
@@ -443,22 +468,31 @@ export default function MapScreen({ route, navigation }) {
           </GeoJSONSource>
         ) : null}
 
-        {/* Live markers (hidden in heatmap mode so density stays readable) */}
+        {/* Our own pin — driven by device GPS, so it appears instantly and tracks
+            us even between (distance-based) pings. Hidden in heatmap mode. */}
+        {mode !== 'heatmap' && selfLoc ? (
+          <Marker id="m-self" lngLat={[selfLoc.lng, selfLoc.lat]} anchor={{ x: 0.5, y: 1 }}>
+            <View style={styles.pinWrap}>
+              <View style={styles.pinLbl}>
+                <Text style={styles.pinLblText}>You</Text>
+              </View>
+              <View style={[styles.pin, { backgroundColor: colors.green }]} />
+            </View>
+          </Marker>
+        ) : null}
+
+        {/* Everyone else, from the socket broadcast */}
         {mode !== 'heatmap'
-          ? entries.map(([userId, m]) => {
-              const isSelf = userId === selfId;
-              const color = isSelf ? colors.green : colorForUser(userId);
-              return (
-                <Marker key={userId} id={`m-${userId}`} lngLat={[m.lng, m.lat]} anchor={{ x: 0.5, y: 1 }}>
-                  <View style={styles.pinWrap}>
-                    <View style={styles.pinLbl}>
-                      <Text style={styles.pinLblText}>{isSelf ? 'You' : m.username}</Text>
-                    </View>
-                    <View style={[styles.pin, { backgroundColor: color }]} />
+          ? others.map(([userId, m]) => (
+              <Marker key={userId} id={`m-${userId}`} lngLat={[m.lng, m.lat]} anchor={{ x: 0.5, y: 1 }}>
+                <View style={styles.pinWrap}>
+                  <View style={styles.pinLbl}>
+                    <Text style={styles.pinLblText}>{m.username}</Text>
                   </View>
-                </Marker>
-              );
-            })
+                  <View style={[styles.pin, { backgroundColor: colorForUser(userId) }]} />
+                </View>
+              </Marker>
+            ))
           : null}
       </Map>
 
@@ -508,6 +542,18 @@ export default function MapScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+      ) : null}
+
+      {/* Recenter on me — hidden while drawing, the draw banner occupies this row */}
+      {selfLoc && !drawMode ? (
+        <TouchableOpacity
+          style={styles.locateBtn}
+          onPress={() => cameraRef.current?.flyTo({
+            center: [selfLoc.lng, selfLoc.lat], zoom: 16, duration: 600,
+          })}
+        >
+          <Ionicons name="locate" size={18} color={colors.green} />
+        </TouchableOpacity>
       ) : null}
 
       {/* Density legend */}
@@ -654,7 +700,7 @@ export default function MapScreen({ route, navigation }) {
               <Text style={styles.statLbl}>Pings</Text>
             </View>
             <View style={styles.stat}>
-              <Text style={styles.statVal}>{entries.length}</Text>
+              <Text style={styles.statVal}>{others.length + 1}</Text>
               <Text style={styles.statLbl}>Users</Text>
             </View>
             <View style={styles.stat}>
@@ -670,16 +716,32 @@ export default function MapScreen({ route, navigation }) {
             <Text style={styles.hint}>
               {routeUser ? `Showing ${routeUser}'s route` : 'Tap a person to replay their route'}
             </Text>
-            {entries.map(([userId, m]) => (
+
+            {/* Always offer our own route, even before any ping has echoed back. */}
+            {selfId ? (
+              <TouchableOpacity style={styles.row} onPress={() => loadRoute(selfId, selfLabel || 'You')}>
+                <View style={[styles.avatar, styles.avatarSelf]}>
+                  <Text style={[styles.avatarText, { color: colors.green }]}>
+                    {(selfLabel || 'You').slice(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.uname}>You</Text>
+                  <Text style={styles.udist}>Tap to show route</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={colors.text3} />
+              </TouchableOpacity>
+            ) : null}
+
+            {others.map(([userId, m]) => (
               <TouchableOpacity key={userId} style={styles.row} onPress={() => loadRoute(userId, m.username)}>
-                <View style={[styles.avatar, userId === selfId ? styles.avatarSelf
-                  : { backgroundColor: colors.blueDim, borderColor: colorForUser(userId) }]}>
-                  <Text style={[styles.avatarText, { color: userId === selfId ? colors.green : colorForUser(userId) }]}>
+                <View style={[styles.avatar, { backgroundColor: colors.blueDim, borderColor: colorForUser(userId) }]}>
+                  <Text style={[styles.avatarText, { color: colorForUser(userId) }]}>
                     {(m.username || '?').slice(0, 2).toUpperCase()}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.uname}>{userId === selfId ? 'You' : m.username}</Text>
+                  <Text style={styles.uname}>{m.username}</Text>
                   <Text style={styles.udist}>Tap to show route</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={14} color={colors.text3} />
@@ -794,6 +856,14 @@ const styles = StyleSheet.create({
   drawBtnSave: { backgroundColor: colors.green, borderColor: colors.green },
   drawBtnText: { color: colors.text2, fontSize: 11, fontWeight: '600' },
 
+  // Left side: the density legend lives on the right, and the bottom sheet covers
+  // the lower part of the screen, so this is the free corner.
+  locateBtn: {
+    position: 'absolute', top: 90, left: 12,
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(13,18,24,0.9)', borderWidth: 1, borderColor: colors.greenBorder,
+  },
   legend: {
     position: 'absolute', top: 90, right: 12,
     backgroundColor: 'rgba(13,18,24,0.85)', borderWidth: 1, borderColor: colors.border2,
