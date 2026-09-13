@@ -14,6 +14,7 @@ Thumbs.db
 
 # Internal planning/working docs — kept local only, not published to remote
 ARCHITECTURE.md
+BENCHMARKS.md
 CLAUDE.md
 CONVENTIONS.md
 ENV.md
